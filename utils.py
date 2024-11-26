@@ -48,7 +48,6 @@ class RetrieveOrder(Enum):
     SIMILAR_AT_BOTTOM = "similar_at_bottom"  # reversed
     RANDOM = "random"  # randomly shuffle the retrieved chunks
 
-'''
 class RAG:
 
     def __init__(self, rag_config: dict) -> None:
@@ -70,12 +69,14 @@ class RAG:
         self.create_faiss_index()
         
         # TODO: make a file to save the inserted rows
+        '''
         self.rag_filename = rag_config.get("rag_filename", "rag_data.jsonl")
         if Path(self.rag_filename).exists():
             with open(self.rag_filename, 'r', encoding='utf-8') as f:
                 for line in f:
                     row = json.loads(line.strip())
                     self.insert(row["key"], row["value"])
+        '''
 
     def create_faiss_index(self):
         # Create a FAISS index
@@ -99,9 +100,11 @@ class RAG:
         self.index.add(np.expand_dims(embedding, axis=0))
         self.id2evidence[str(self.insert_acc)] = value
         
+        '''
         with open(self.rag_filename, 'a', encoding='utf-8') as f:
             json.dump({"key": key, "value": value}, f)
             f.write("\n")
+        '''
         
         self.insert_acc += 1
 
@@ -122,9 +125,8 @@ class RAG:
         
         text_list = [self.id2evidence[result["link"]] for result in results]
         return text_list
-'''
     
-class RAG:
+class AdaptiveRAG:
     def __init__(self, rag_config: dict):
         self.tokenizer = AutoTokenizer.from_pretrained(rag_config["embedding_model"])
         self.embed_model = AutoModel.from_pretrained(rag_config["embedding_model"]).eval()
@@ -134,28 +136,26 @@ class RAG:
         self.top_k = rag_config["top_k"]
         self.default_weight = 1.0
 
-    def insert(self, key: str, value: str):
-        embedding = self.encode_data(key).astype("float32")
-        self.index.add(embedding[np.newaxis, :])
-        self.id2evidence[str(self.insert_acc)] = value
-        self.insert_acc += 1
-
     def encode_data(self, text: str) -> np.ndarray:
         tokens = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
         with torch.no_grad():
             embeddings = self.embed_model(**tokens).last_hidden_state[:, 0, :]
         return embeddings.squeeze().numpy()
 
+    def insert(self, key: str, value: str):
+        embedding = self.encode_data(key).astype("float32")
+        self.index.add(embedding[np.newaxis, :])
+        self.id2evidence[str(self.insert_acc)] = value
+        self.insert_acc += 1
+
     def retrieve(self, query: str) -> list[tuple[str, float]]:
-        """
-        Retrieve the most relevant documents based on the query.
-        """
+        """Retrieve the most relevant documents based on the query."""
         embedding = self.encode_data(query).astype("float32")
         distances, indices = self.index.search(embedding[np.newaxis, :], self.top_k)
         
         results = []
         for idx, dist in zip(indices[0], distances[0]):
-            if idx == -1:  # 無效檢索結果
+            if idx == -1:
                 continue
             evidence = self.id2evidence.get(str(idx), None)
             if evidence:
