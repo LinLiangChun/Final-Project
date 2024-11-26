@@ -3,7 +3,7 @@ import random
 from base import Agent
 from colorama import Fore, Style
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, AdamW
 import warnings
 from transformers import logging as transformers_logging
 
@@ -103,7 +103,40 @@ class ClassificationAgent(Agent):
                 print(Fore.RED + f"Prediction {pred_text} has no extracted numbers. Randomly select one." + Style.RESET_ALL)
                 prediction = random.choice(list(label2desc.keys()))
         return str(prediction)
+
+    # Fine-tuning on correct examples.
+    def finetune(self, question: str, answer: str) -> None:
+        inputs = self.tokenizer(
+            question,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=512
+        ).to(self.model.device)
     
+        answer_formatted = f"{answer}"
+        labels = self.tokenizer(
+            answer_formatted,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=inputs["input_ids"].shape[1]
+        ).input_ids.to(self.model.device)
+    
+        if labels.shape[1] < inputs["input_ids"].shape[1]:
+            padding = torch.full(
+                (labels.shape[0], inputs["input_ids"].shape[1] - labels.shape[1]),
+                fill_value=-100,
+                device=labels.device
+            )
+            labels = torch.cat([labels, padding], dim=1)
+        elif labels.shape[1] > inputs["input_ids"].shape[1]:
+            labels = labels[:, :inputs["input_ids"].shape[1]]
+    
+        outputs = self.model(**inputs, labels=labels)
+        loss = outputs.loss
+        loss.backward()
+
     def __init__(self, config: dict) -> None:
         """
         Initialize your LLM here
@@ -210,6 +243,7 @@ class ClassificationAgent(Agent):
         if correctness:
             question = self.inputs[-1]
             answer = self.self_outputs[-1]
+            self.finetune(question, answer)
             chunk = self.get_shot_template().format(question=question, answer=answer)
             self.rag.insert(key=question, value=chunk)
             return True
