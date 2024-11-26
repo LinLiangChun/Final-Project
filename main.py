@@ -3,7 +3,7 @@ import random
 from base import Agent
 from colorama import Fore, Style
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, AdamW
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import warnings
 from transformers import logging as transformers_logging
 
@@ -104,39 +104,6 @@ class ClassificationAgent(Agent):
                 prediction = random.choice(list(label2desc.keys()))
         return str(prediction)
 
-    # Fine-tuning on correct examples.
-    def finetune(self, question: str, answer: str) -> None:
-        inputs = self.tokenizer(
-            question,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=512
-        ).to(self.model.device)
-    
-        answer_formatted = f"{answer}"
-        labels = self.tokenizer(
-            answer_formatted,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=inputs["input_ids"].shape[1]
-        ).input_ids.to(self.model.device)
-    
-        if labels.shape[1] < inputs["input_ids"].shape[1]:
-            padding = torch.full(
-                (labels.shape[0], inputs["input_ids"].shape[1] - labels.shape[1]),
-                fill_value=-100,
-                device=labels.device
-            )
-            labels = torch.cat([labels, padding], dim=1)
-        elif labels.shape[1] > inputs["input_ids"].shape[1]:
-            labels = labels[:, :inputs["input_ids"].shape[1]]
-    
-        outputs = self.model(**inputs, labels=labels)
-        loss = outputs.loss
-        loss.backward()
-
     def __init__(self, config: dict) -> None:
         """
         Initialize your LLM here
@@ -196,8 +163,19 @@ class ClassificationAgent(Agent):
         prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
         prompt_fewshot = self.get_fewshot_template(option_text, text)
         
-        shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
-        if len(shots):
+        #shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
+        
+        # Retrieve context with scores
+        retrieval_results = self.rag.retrieve(query=text)
+        docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
+        
+        # Adjust weights
+        weights = self.rag.adjust_weights(scores)
+        
+        # Dynamically combine shots with weights
+        shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
+        
+        if len(shots) > 0:
             fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
             try:
                 prompt = re.sub(pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot)
@@ -208,7 +186,7 @@ class ClassificationAgent(Agent):
         else:
             print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
             prompt = prompt_zeroshot
-        
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
@@ -243,7 +221,6 @@ class ClassificationAgent(Agent):
         if correctness:
             question = self.inputs[-1]
             answer = self.self_outputs[-1]
-            self.finetune(question, answer)
             chunk = self.get_shot_template().format(question=question, answer=answer)
             self.rag.insert(key=question, value=chunk)
             return True
@@ -315,7 +292,7 @@ if __name__ == "__main__":
     llm_config = {
         # TODO: specify your configs for the agent here
         'model_name': args.model_name,
-        'exp_name': f'self_streamicl_{args.bench_name}_{args.model_name}',
+        'exp_name': f'adaptive_rag_{args.bench_name}_{args.model_name}',
         'bench_name': bench_cfg['bench_name'],
         'max_tokens': max_tokens,
         'do_sample': False,
@@ -325,7 +302,8 @@ if __name__ == "__main__":
             'embedding_model': 'BAAI/bge-base-en-v1.5',
             'seed': 42,
             "top_k": 16,
-            "order": "similar_at_top"
+            "order": "similar_at_top",
+            'embed_dim': 768,
         }
     }
     agent = agent_name(llm_config)
