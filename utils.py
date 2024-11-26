@@ -48,6 +48,7 @@ class RetrieveOrder(Enum):
     SIMILAR_AT_BOTTOM = "similar_at_bottom"  # reversed
     RANDOM = "random"  # randomly shuffle the retrieved chunks
 
+'''
 class RAG:
 
     def __init__(self, rag_config: dict) -> None:
@@ -121,50 +122,40 @@ class RAG:
         
         text_list = [self.id2evidence[result["link"]] for result in results]
         return text_list
+'''
     
-class AdaptiveRAG:
+class RAG:
     def __init__(self, rag_config: dict):
         self.tokenizer = AutoTokenizer.from_pretrained(rag_config["embedding_model"])
         self.embed_model = AutoModel.from_pretrained(rag_config["embedding_model"]).eval()
-        
-        self.index = None
-        self.id2evidence = dict()
-        self.embed_dim = len(self.encode_data("Test embedding size"))
-        self.insert_acc = 0        
+        self.index = faiss.IndexFlatL2(rag_config.get("embed_dim", 768))
+        self.id2evidence = {}
+        self.insert_acc = 0
         self.top_k = rag_config["top_k"]
-        self.create_faiss_index()
-        
         self.default_weight = 1.0
-
-    def create_faiss_index(self):
-        self.index = faiss.IndexFlatL2(self.embed_dim)
-
-    def encode_data(self, sentence: str) -> np.ndarray:
-        encoded_input = self.tokenizer([sentence], padding=True, truncation=True, return_tensors="pt")
-        
-        with torch.no_grad():
-            model_output = self.embed_model(**encoded_input)
-            sentence_embeddings = model_output[0][:, 0]
-        feature = sentence_embeddings.numpy()[0]
-        norm = np.linalg.norm(feature)
-        
-        return feature / norm
 
     def insert(self, key: str, value: str):
         embedding = self.encode_data(key).astype("float32")
-        #self.index.add(embedding[np.newaxis, :])
-        self.index.add(np.expand_dims(embedding, axis=0))
+        self.index.add(embedding[np.newaxis, :])
         self.id2evidence[str(self.insert_acc)] = value
         self.insert_acc += 1
 
+    def encode_data(self, text: str) -> np.ndarray:
+        tokens = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        with torch.no_grad():
+            embeddings = self.embed_model(**tokens).last_hidden_state[:, 0, :]
+        return embeddings.squeeze().numpy()
+
     def retrieve(self, query: str) -> list[tuple[str, float]]:
-        """Retrieve the most relevant documents based on the query."""
+        """
+        Retrieve the most relevant documents based on the query.
+        """
         embedding = self.encode_data(query).astype("float32")
         distances, indices = self.index.search(embedding[np.newaxis, :], self.top_k)
         
         results = []
         for idx, dist in zip(indices[0], distances[0]):
-            if idx == -1:
+            if idx == -1:  # 無效檢索結果
                 continue
             evidence = self.id2evidence.get(str(idx), None)
             if evidence:
@@ -175,7 +166,6 @@ class AdaptiveRAG:
     def adjust_weights(self, retrieval_scores):
         max_score = max(retrieval_scores) if retrieval_scores else 1.0
         weights = [score / max_score for score in retrieval_scores]
-        
         return weights
 
 def extract_json_string(res: str) -> str:
