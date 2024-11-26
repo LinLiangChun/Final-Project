@@ -7,7 +7,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import warnings
 from transformers import logging as transformers_logging
 
-from utils import RAG, strip_all_lines
+from utils import RAG, AdaptiveRAG, strip_all_lines
 
 # Ignore warning messages from transformers
 warnings.filterwarnings("ignore")
@@ -129,7 +129,9 @@ class ClassificationAgent(Agent):
                 device_map=config["device"]
             )
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
-        self.rag = RAG(config["rag"])
+        #self.rag = RAG(config["rag"])
+        self.rag = AdaptiveRAG(config["rag"])
+        
         # Save the streaming inputs and outputs for iterative improvement
         self.inputs = list()
         self.self_outputs = list()
@@ -164,15 +166,11 @@ class ClassificationAgent(Agent):
         prompt_fewshot = self.get_fewshot_template(option_text, text)
         
         #shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
-        
-        # Retrieve context with scores
+
         retrieval_results = self.rag.retrieve(query=text)
         docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
-        
-        # Adjust weights
+
         weights = self.rag.adjust_weights(scores)
-        
-        # Dynamically combine shots with weights
         shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
         
         if len(shots) > 0:
@@ -191,6 +189,7 @@ class ClassificationAgent(Agent):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ]
+        print(messages)
         response = self.generate_response(messages)
         prediction = self.extract_label(response, label2desc)
         
@@ -205,7 +204,7 @@ class ClassificationAgent(Agent):
         self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
         
         return prediction
-
+    
     def update(self, correctness: bool) -> bool:
         """
         Update your LLM agent based on the correctness of its own prediction at the current time step.
@@ -223,6 +222,7 @@ class ClassificationAgent(Agent):
             answer = self.self_outputs[-1]
             chunk = self.get_shot_template().format(question=question, answer=answer)
             self.rag.insert(key=question, value=chunk)
+            self.rag.default_weight = 1.5
             return True
         return False
 
