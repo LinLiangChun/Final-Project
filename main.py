@@ -7,7 +7,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import warnings
 from transformers import logging as transformers_logging
 
-from utils import RAG, AdaptiveRAG, strip_all_lines
+from utils import RAG, strip_all_lines
 
 # Ignore warning messages from transformers
 warnings.filterwarnings("ignore")
@@ -129,9 +129,7 @@ class ClassificationAgent(Agent):
                 device_map=config["device"]
             )
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
-        #self.rag = RAG(config["rag"])
-        self.rag = AdaptiveRAG(config["rag"])
-        
+        self.rag = RAG(config["rag"])
         # Save the streaming inputs and outputs for iterative improvement
         self.inputs = list()
         self.self_outputs = list()
