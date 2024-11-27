@@ -175,7 +175,7 @@ class ClassificationAgent(Agent):
         weights = self.rag.adjust_weights(scores)
         shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
         
-        if self.rag.insert_acc >= 150:
+        if self.rag.insert_acc >= 250:
             if len(shots) > 0:
                 fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
                 try:
@@ -209,9 +209,6 @@ class ClassificationAgent(Agent):
         self.inputs.append(text)
         self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
         
-        
-        print(self.rag.insert_acc)
-        
         return prediction
     
     def update(self, correctness: bool) -> bool:
@@ -233,7 +230,7 @@ class ClassificationAgent(Agent):
             self.rag.insert(key=question, value=chunk)
             return True
         return False
-
+        
 class SQLGenerationAgent(Agent):
     """
     An agent that generates SQL code based on the given table schema and the user query.
