@@ -165,21 +165,27 @@ class ClassificationAgent(Agent):
         prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
         prompt_fewshot = self.get_fewshot_template(option_text, text)
         
-        #shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
-
-        retrieval_results = self.rag.retrieve(query=text)
-        docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
-
-        weights = self.rag.adjust_weights(scores)
-        shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
+        '''
+        shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
+        '''
         
-        if len(shots) > 0:
-            fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
-            try:
-                prompt = re.sub(pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot)
-            except Exception as e:
-                error_msg = f"Error ```{e}``` caused by these shots. Using the zero-shot prompt."
-                print(Fore.RED + error_msg + Fore.RESET)
+        if self.rag.insert_acc >= 150:
+            retrieval_results = self.rag.retrieve(query=text)
+            docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
+    
+            weights = self.rag.adjust_weights(scores)
+            shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
+            
+            if len(shots) > 0:
+                fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
+                try:
+                    prompt = re.sub(pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot)
+                except Exception as e:
+                    error_msg = f"Error ```{e}``` caused by these shots. Using the zero-shot prompt."
+                    print(Fore.RED + error_msg + Fore.RESET)
+                    prompt = prompt_zeroshot
+            else:
+                print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
                 prompt = prompt_zeroshot
         else:
             print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
@@ -189,7 +195,7 @@ class ClassificationAgent(Agent):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ]
-        print(messages)
+
         response = self.generate_response(messages)
         prediction = self.extract_label(response, label2desc)
         
@@ -202,6 +208,9 @@ class ClassificationAgent(Agent):
         })
         self.inputs.append(text)
         self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
+        
+        
+        print(self.rag.insert_acc)
         
         return prediction
     
@@ -222,7 +231,6 @@ class ClassificationAgent(Agent):
             answer = self.self_outputs[-1]
             chunk = self.get_shot_template().format(question=question, answer=answer)
             self.rag.insert(key=question, value=chunk)
-            self.rag.default_weight = 1.5
             return True
         return False
 
