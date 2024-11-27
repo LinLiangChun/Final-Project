@@ -174,7 +174,8 @@ class ClassificationAgent(Agent):
 
         weights = self.rag.adjust_weights(scores)
         shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
-        
+
+        print(self.rag.insert_acc)
         if self.rag.insert_acc >= 150:
             if len(shots) > 0:
                 fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
