@@ -188,7 +188,7 @@ class ClassificationAgent(Agent):
                 print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
                 prompt = prompt_zeroshot
         else:
-            print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
+            print(Fore.YELLOW + "Less RAG shots. Using zeroshot prompt." + Fore.RESET)
             prompt = prompt_zeroshot
 
         messages = [
@@ -230,7 +230,7 @@ class ClassificationAgent(Agent):
             self.rag.insert(key=question, value=chunk)
             return True
         return False
-        
+
 class SQLGenerationAgent(Agent):
     """
     An agent that generates SQL code based on the given table schema and the user query.
