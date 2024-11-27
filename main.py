@@ -169,13 +169,13 @@ class ClassificationAgent(Agent):
         shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
         '''
         
+        retrieval_results = self.rag.retrieve(query=text)
+        docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
+
+        weights = self.rag.adjust_weights(scores)
+        shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
+        
         if self.rag.insert_acc >= 150:
-            retrieval_results = self.rag.retrieve(query=text)
-            docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
-    
-            weights = self.rag.adjust_weights(scores)
-            shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
-            
             if len(shots) > 0:
                 fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
                 try:
