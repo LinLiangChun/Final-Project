@@ -135,6 +135,7 @@ class AdaptiveRAG:
         self.insert_acc = 0
         self.top_k = rag_config["top_k"]
         self.default_weight = 1.0
+        self.retrieve_count = {}
 
     def encode_data(self, text: str) -> np.ndarray:
         tokens = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
@@ -149,7 +150,6 @@ class AdaptiveRAG:
         self.insert_acc += 1
 
     def retrieve(self, query: str) -> list[tuple[str, float]]:
-        """Retrieve the most relevant documents based on the query."""
         embedding = self.encode_data(query).astype("float32")
         distances, indices = self.index.search(embedding[np.newaxis, :], self.top_k)
         
@@ -160,13 +160,29 @@ class AdaptiveRAG:
             evidence = self.id2evidence.get(str(idx), None)
             if evidence:
                 results.append((evidence, 1.0 / (dist + 1e-5)))
+                self.retrieve_count[str(idx)] = self.retrieve_count.get(str(idx), 0) + 1
         
         return results
 
     def adjust_weights(self, retrieval_scores):
         max_score = max(retrieval_scores) if retrieval_scores else 1.0
         weights = [score / max_score for score in retrieval_scores]
+        
         return weights
+
+    def update_memory(self, top_k: int) -> None:
+        sorted_examples = sorted(self.retrieve_count.items(), key=lambda x: x[1], reverse=True)
+        keep_indices = set(item[0] for item in sorted_examples[:top_k])
+        
+        self.id2evidence = {k: v for k, v in self.id2evidence.items() if k in keep_indices}
+        self.retrieve_count = {k: v for k, v in self.retrieve_count.items() if k in keep_indices}
+        
+        self.index.reset()
+        for idx, evidence in self.id2evidence.items():
+            embedding = self.encode_data(evidence).astype("float32")
+            self.index.add(embedding[np.newaxis, :])
+            
+        print('Memory update!')
 
 def extract_json_string(res: str) -> str:
     """Extract the first valid json string from the response string (of LLMs).
