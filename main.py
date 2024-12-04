@@ -239,7 +239,10 @@ class ClassificationAgent(Agent):
                 self.rag.update_memory(top_k=150)
             '''
             
+            
+            
             return True
+        
         return False
 
 class SQLGenerationAgent(Agent):
@@ -318,7 +321,7 @@ if __name__ == "__main__":
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
             'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             'seed': 42,
-            "top_k": 16,
+            "top_k": 50,
             "order": "similar_at_top",
             'embed_dim': 768,
         }
