@@ -232,14 +232,12 @@ class ClassificationAgent(Agent):
             question = self.inputs[-1]
             answer = self.self_outputs[-1]
             chunk = self.get_shot_template().format(question=question, answer=answer)
-            self.rag.insert(key=question, value=chunk)
+            self.rag.insert(key=question, value=answer)
             
             '''
             if self.rag.insert_acc % 50 == 0:
                 self.rag.update_memory(top_k=150)
             '''
-            
-            
             
             return True
         
@@ -321,7 +319,7 @@ if __name__ == "__main__":
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
             'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             'seed': 42,
-            "top_k": 50,
+            "top_k": 16,
             "order": "similar_at_top",
             'embed_dim': 768,
         }
