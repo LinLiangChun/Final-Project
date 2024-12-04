@@ -178,7 +178,7 @@ class AdaptiveRAG:
     def update_memory(self, top_k: int) -> None:
         sorted_examples = sorted(
             self.id2evidence.keys(),
-            key=lambda x: (self.retrieve_count.get(x, 0), self.insert_order.get(x, 0)),
+            key=lambda x: self.insert_order.get(x, 0),
             reverse=True
         )
         keep_indices = set(sorted_examples[:top_k])
