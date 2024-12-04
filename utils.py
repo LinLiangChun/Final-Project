@@ -134,8 +134,11 @@ class AdaptiveRAG:
         self.id2evidence = {}
         self.insert_acc = 0
         self.top_k = rag_config["top_k"]
+        
         self.default_weight = 1.0
+        
         self.retrieve_count = {}
+        self.insert_order = {}
 
     def encode_data(self, text: str) -> np.ndarray:
         tokens = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
@@ -147,6 +150,8 @@ class AdaptiveRAG:
         embedding = self.encode_data(key).astype("float32")
         self.index.add(embedding[np.newaxis, :])
         self.id2evidence[str(self.insert_acc)] = value
+        self.retrieve_count[str(self.insert_acc)] = 0
+        self.insert_order[str(self.insert_acc)] = self.insert_acc
         self.insert_acc += 1
 
     def retrieve(self, query: str) -> list[tuple[str, float]]:
@@ -171,11 +176,16 @@ class AdaptiveRAG:
         return weights
 
     def update_memory(self, top_k: int) -> None:
-        sorted_examples = sorted(self.retrieve_count.items(), key=lambda x: x[1], reverse=True)
-        keep_indices = set(item[0] for item in sorted_examples[:top_k])
+        sorted_examples = sorted(
+            self.id2evidence.keys(),
+            key=lambda x: (self.retrieve_count.get(x, 0), self.insert_order.get(x, 0)),
+            reverse=True
+        )
+        keep_indices = set(sorted_examples[:top_k])
         
         self.id2evidence = {k: v for k, v in self.id2evidence.items() if k in keep_indices}
         self.retrieve_count = {k: v for k, v in self.retrieve_count.items() if k in keep_indices}
+        self.insert_order = {k: v for k, v in self.insert_order.items() if k in keep_indices}
         
         self.index.reset()
         for idx, evidence in self.id2evidence.items():
