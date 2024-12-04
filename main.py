@@ -317,11 +317,11 @@ if __name__ == "__main__":
         'use_8bit': args.use_8bit,
         'rag': {
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
-            #'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
+            'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             #'embedding_model': 'medicalai/ClinicalBERT',
             #'embedding_model': 'emilyalsentzer/Bio_ClinicalBERT',
             #'embedding_model': 'NeuML/pubmedbert-base-embeddings',
-            'embedding_model': 'pritamdeka/S-PubMedBert-MS-MARCO',
+            #'embedding_model': 'pritamdeka/S-PubMedBert-MS-MARCO',
             'seed': 42,
             'top_k': 16,
             'order': 'similar_at_top',
