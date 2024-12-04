@@ -135,6 +135,9 @@ class ClassificationAgent(Agent):
         # Save the streaming inputs and outputs for iterative improvement
         self.inputs = list()
         self.self_outputs = list()
+        
+        self.step = 0
+        
         self.model.eval()
 
     def __call__(self, label2desc: dict[str, str], text: str) -> str:
@@ -175,8 +178,7 @@ class ClassificationAgent(Agent):
         weights = self.rag.adjust_weights(scores)
         shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
 
-        print(self.rag.insert_acc)
-        if self.rag.insert_acc >= 150:
+        if self.step >= 500:
             if len(shots) > 0:
                 fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
                 try:
@@ -191,6 +193,8 @@ class ClassificationAgent(Agent):
         else:
             print(Fore.YELLOW + "Less RAG shots. Using zeroshot prompt." + Fore.RESET)
             prompt = prompt_zeroshot
+
+        self.step += 1        
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -229,6 +233,10 @@ class ClassificationAgent(Agent):
             answer = self.self_outputs[-1]
             chunk = self.get_shot_template().format(question=question, answer=answer)
             self.rag.insert(key=question, value=chunk)
+            
+            if self.rag.insert_acc % 50 == 0:
+                self.rag.update_memory(top_k=100)
+            
             return True
         return False
 
