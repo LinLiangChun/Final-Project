@@ -233,10 +233,8 @@ class ClassificationAgent(Agent):
             chunk = self.get_shot_template().format(question=question, answer=answer)
             self.rag.insert(key=question, value=chunk)
             
-            '''
             if self.rag.insert_acc % 50 == 0:
-                self.rag.update_memory(top_k=150)
-            '''
+                self.rag.update_memory(top_k=500)
             
             return True
         return False
