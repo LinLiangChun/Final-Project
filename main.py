@@ -136,8 +136,6 @@ class ClassificationAgent(Agent):
         self.inputs = list()
         self.self_outputs = list()
         
-        self.step = 0
-        
         self.model.eval()
 
     def __call__(self, label2desc: dict[str, str], text: str) -> str:
@@ -179,7 +177,6 @@ class ClassificationAgent(Agent):
         shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
 
         if self.rag.insert_acc >= 150:
-        #if self.step >= 500:
             if len(shots) > 0:
                 fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
                 try:
@@ -192,9 +189,7 @@ class ClassificationAgent(Agent):
                 print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
                 prompt = prompt_zeroshot
         else:
-            prompt = prompt_zeroshot
-
-        self.step += 1        
+            prompt = prompt_zeroshot     
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -236,7 +231,7 @@ class ClassificationAgent(Agent):
             
             '''
             if self.rag.insert_acc % 50 == 0:
-                self.rag.update_memory(top_k=150)
+                self.rag.update_memory(top_k=500)
             '''
             
             return True
