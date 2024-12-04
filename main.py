@@ -179,6 +179,7 @@ class ClassificationAgent(Agent):
         shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
 
         if self.rag.insert_acc >= 150:
+        #if self.step >= 500:
             if len(shots) > 0:
                 fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
                 try:
@@ -233,8 +234,10 @@ class ClassificationAgent(Agent):
             chunk = self.get_shot_template().format(question=question, answer=answer)
             self.rag.insert(key=question, value=chunk)
             
+            '''
             if self.rag.insert_acc % 50 == 0:
-                self.rag.update_memory(top_k=500)
+                self.rag.update_memory(top_k=150)
+            '''
             
             return True
         return False
@@ -312,7 +315,8 @@ if __name__ == "__main__":
         'device': args.device,
         'use_8bit': args.use_8bit,
         'rag': {
-            'embedding_model': 'BAAI/bge-base-en-v1.5',
+            #'embedding_model': 'BAAI/bge-base-en-v1.5',
+            'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             'seed': 42,
             "top_k": 16,
             "order": "similar_at_top",
