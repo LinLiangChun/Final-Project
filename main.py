@@ -234,7 +234,7 @@ class ClassificationAgent(Agent):
             self.rag.insert(key=question, value=chunk)
             
             if self.rag.insert_acc % 50 == 0:
-                self.rag.update_memory(top_k=100)
+                self.rag.update_memory(top_k=500)
             
             return True
         return False
