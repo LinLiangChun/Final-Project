@@ -319,7 +319,7 @@ if __name__ == "__main__":
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
             'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             'seed': 42,
-            "top_k": 10,
+            "top_k": 20,
             "order": "similar_at_top",
             'embed_dim': 768,
         }
