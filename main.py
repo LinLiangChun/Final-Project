@@ -191,7 +191,6 @@ class ClassificationAgent(Agent):
                 print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
                 prompt = prompt_zeroshot
         else:
-            print(Fore.YELLOW + "Less RAG shots. Using zeroshot prompt." + Fore.RESET)
             prompt = prompt_zeroshot
 
         self.step += 1        
