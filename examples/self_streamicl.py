@@ -50,11 +50,17 @@ class LocalModelAgent(Agent):
         """
         Generate a response using the local model.
         """
+        '''
         text_chat = self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True
         )
+        '''
+        text_chat = "\n".join(
+            f"{msg['role'].capitalize()}: {msg['content']}" for msg in messages
+        )
+        
         model_inputs = self.tokenizer([text_chat], return_tensors="pt").to(self.model.device)
 
         generated_ids = self.model.generate(
@@ -161,7 +167,7 @@ class ClassificationAgent(LocalModelAgent):
             prompt = prompt_zeroshot
         
         messages = [
-            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": system_prompt},
             {"role": "user", "content": prompt}
         ]
         response = self.generate_response(messages)
@@ -268,7 +274,7 @@ class SQLGenerationAgent(LocalModelAgent):
             prompt = prompt_zeroshot
         
         messages = [
-            {"role": "system", "content": self.get_system_prompt()},
+            {"role": "user", "content": self.get_system_prompt()},
             {"role": "user", "content": prompt}
         ]
         pred_text = self.generate_response(messages)
