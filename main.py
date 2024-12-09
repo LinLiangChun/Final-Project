@@ -3,7 +3,7 @@ import random
 from base import Agent
 from colorama import Fore, Style
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, AutoModel
 import warnings
 from transformers import logging as transformers_logging
 
@@ -105,30 +105,32 @@ class ClassificationAgent(Agent):
                 prediction = random.choice(list(label2desc.keys()))
         return str(prediction)
 
-    def adjust_chunk_size(self, text: str, max_chunk_size: int = 512, overlap: int = 50) -> list:
-        """
-        將輸入文本根據指定的分塊大小進行切分，適配檢索需求。
-        
-        Args:
-            text (str): 輸入文本。
-            max_chunk_size (int): 最大分塊大小。
-            overlap (int): 分塊間的重疊大小。
+    def re_rank_candidates(self, candidates: list[str], query: str) -> list[str]:
+        if not candidates:
+            print(Fore.YELLOW + "No candidates to re-rank. Returning an empty list." + Style.RESET_ALL)
+            return []
     
-        Returns:
-            list: 分塊後的文本列表。
-        """
-        tokens = self.tokenizer.tokenize(text)
-        if len(tokens) <= max_chunk_size:
-            # 文本過短，不進行切分
-            return [text]
-        
-        chunks = []
-        
-        for i in range(0, len(tokens), max_chunk_size - overlap):
-            chunk_tokens = tokens[i:i + max_chunk_size]
-            chunks.append(self.tokenizer.convert_tokens_to_string(chunk_tokens))
-        
-        return chunks
+        def get_embedding(text):
+            inputs = self.rerank_tokenizer(text, return_tensors="pt", padding=True, truncation=True).to(self.model.device)
+            outputs = self.rerank_model(**inputs)
+            return outputs.last_hidden_state.mean(dim=1)
+
+        query_embedding = get_embedding(query)
+
+        candidate_embeddings = [get_embedding(candidate) for candidate in candidates]
+
+        if not candidate_embeddings:
+            print(Fore.YELLOW + "No candidate embeddings generated. Returning an empty list." + Style.RESET_ALL)
+            return []
+    
+        candidate_embeddings = torch.cat(candidate_embeddings, dim=0)
+
+        similarities = torch.nn.functional.cosine_similarity(query_embedding, candidate_embeddings)
+
+        sorted_indices = torch.argsort(similarities, descending=True)
+        reranked_candidates = [candidates[idx] for idx in sorted_indices]
+    
+        return reranked_candidates
 
     def __init__(self, config: dict) -> None:
         """
@@ -156,6 +158,9 @@ class ClassificationAgent(Agent):
             )
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
         
+        self.rerank_model = AutoModel.from_pretrained("sentence-transformers/all-mpnet-base-v2").to(self.model.device)
+        self.rerank_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-mpnet-base-v2")
+
         '''
         self.rag = RAG(config["rag"])
         '''
@@ -199,24 +204,15 @@ class ClassificationAgent(Agent):
         shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
         '''
         
-        #retrieval_results = self.rag.retrieve(query=text)
-        chunks = self.adjust_chunk_size(
-            text, 
-            max_chunk_size=self.llm_config.get('chunk_size', 512), 
-            overlap=self.llm_config.get('chunk_overlap', 50)
-        )
-        print(f"Original text: {len(self.tokenizer.tokenize(text))} tokens, Chunks created: {len(chunks)}")  # Log 分塊資訊
-
-        retrieval_results = []
-        for chunk in chunks:
-            retrieval_result = self.rag.retrieve(query=chunk)
-            retrieval_results.extend(retrieval_result)
-        
+        retrieval_results = self.rag.retrieve(query=text)
         docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
 
-        weights = self.rag.adjust_weights(scores)
-        shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
+        reranked_docs = self.re_rank_candidates(docs, text)
 
+        weights = self.rag.adjust_weights(scores)
+        #shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
+        shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(reranked_docs, weights)]
+        
         if self.rag.insert_acc >= 150:
             if len(shots) > 0:
                 fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
@@ -351,8 +347,6 @@ if __name__ == "__main__":
         'do_sample': False,
         'device': args.device,
         'use_8bit': args.use_8bit,
-        'chunk_size': 100,  # 新增分塊大小
-        'chunk_overlap': 10,  # 新增分塊重疊大小
         'rag': {
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
             'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
