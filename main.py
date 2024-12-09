@@ -351,8 +351,8 @@ if __name__ == "__main__":
         'do_sample': False,
         'device': args.device,
         'use_8bit': args.use_8bit,
-        'chunk_size': 50,  # 新增分塊大小
-        'chunk_overlap': 5,  # 新增分塊重疊大小
+        'chunk_size': 100,  # 新增分塊大小
+        'chunk_overlap': 10,  # 新增分塊重疊大小
         'rag': {
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
             'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
