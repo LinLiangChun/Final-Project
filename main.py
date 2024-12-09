@@ -60,6 +60,7 @@ class ClassificationAgent(Agent):
         {text}        
         
         Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>"""
+        
         return strip_all_lines(prompt)
     
     def generate_response(self, messages: list) -> str:
@@ -129,7 +130,10 @@ class ClassificationAgent(Agent):
                 device_map=config["device"]
             )
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
-        #self.rag = RAG(config["rag"])
+        
+        '''
+        self.rag = RAG(config["rag"])
+        '''
         self.rag = AdaptiveRAG(config["rag"])
         
         # Save the streaming inputs and outputs for iterative improvement
@@ -195,6 +199,8 @@ class ClassificationAgent(Agent):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ]
+        
+        print(messages)
 
         response = self.generate_response(messages)
         prediction = self.extract_label(response, label2desc)
