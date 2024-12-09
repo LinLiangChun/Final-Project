@@ -200,8 +200,6 @@ class ClassificationAgent(Agent):
             {"role": "user", "content": prompt}
         ]
         
-        print(messages)
-
         response = self.generate_response(messages)
         prediction = self.extract_label(response, label2desc)
         
