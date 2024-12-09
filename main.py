@@ -105,6 +105,31 @@ class ClassificationAgent(Agent):
                 prediction = random.choice(list(label2desc.keys()))
         return str(prediction)
 
+    def adjust_chunk_size(self, text: str, max_chunk_size: int = 512, overlap: int = 50) -> list:
+        """
+        將輸入文本根據指定的分塊大小進行切分，適配檢索需求。
+        
+        Args:
+            text (str): 輸入文本。
+            max_chunk_size (int): 最大分塊大小。
+            overlap (int): 分塊間的重疊大小。
+    
+        Returns:
+            list: 分塊後的文本列表。
+        """
+        tokens = self.tokenizer.tokenize(text)
+        if len(tokens) <= max_chunk_size:
+            # 文本過短，不進行切分
+            return [text]
+        
+        chunks = []
+        
+        for i in range(0, len(tokens), max_chunk_size - overlap):
+            chunk_tokens = tokens[i:i + max_chunk_size]
+            chunks.append(self.tokenizer.convert_tokens_to_string(chunk_tokens))
+        
+        return chunks
+
     def __init__(self, config: dict) -> None:
         """
         Initialize your LLM here
@@ -174,7 +199,19 @@ class ClassificationAgent(Agent):
         shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
         '''
         
-        retrieval_results = self.rag.retrieve(query=text)
+        #retrieval_results = self.rag.retrieve(query=text)
+        chunks = self.adjust_chunk_size(
+            text, 
+            max_chunk_size=self.llm_config.get('chunk_size', 512), 
+            overlap=self.llm_config.get('chunk_overlap', 50)
+        )
+        print(f"Original text: {len(self.tokenizer.tokenize(text))} tokens, Chunks created: {len(chunks)}")  # Log 分塊資訊
+
+        retrieval_results = []
+        for chunk in chunks:
+            retrieval_result = self.rag.retrieve(query=chunk)
+            retrieval_results.extend(retrieval_result)
+        
         docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
 
         weights = self.rag.adjust_weights(scores)
@@ -199,7 +236,7 @@ class ClassificationAgent(Agent):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ]
-        
+
         response = self.generate_response(messages)
         prediction = self.extract_label(response, label2desc)
         
@@ -314,6 +351,8 @@ if __name__ == "__main__":
         'do_sample': False,
         'device': args.device,
         'use_8bit': args.use_8bit,
+        'chunk_size': 512,  # 新增分塊大小
+        'chunk_overlap': 50,  # 新增分塊重疊大小
         'rag': {
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
             'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
