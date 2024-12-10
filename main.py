@@ -325,7 +325,7 @@ if __name__ == "__main__":
             'seed': 42,
             'top_k': 16,
             'order': 'similar_at_top',
-            'embed_dim': 768,
+            'embed_dim': 1024, #768
         }
     }
     agent = agent_name(llm_config)
