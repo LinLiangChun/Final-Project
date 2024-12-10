@@ -25,9 +25,17 @@ class ClassificationAgent(Agent):
         Provide your diagnosis in the following format: <number>. <diagnosis>""".strip()
         '''
         
+        '''
         system_prompt = """\
         You are a highly skilled medical diagnostic AI. Your job is to analyze patient profiles and provide accurate and concise diagnoses. Make sure to always follow the given instructions and adhere to the response format: <number>. <diagnosis>.
         """
+        '''
+        
+        system_prompt = """\
+        You are a professional medical doctor specializing in diagnostics. 
+        Your job is to analyze patient profiles and provide the most accurate diagnosis. 
+        Make sure to provide your diagnosis in the following the format: <number>. <diagnosis>.""".strip()
+        
         return strip_all_lines(system_prompt)
 
     @staticmethod
@@ -43,6 +51,7 @@ class ClassificationAgent(Agent):
         Now, directly provide the diagnosis for the patient in the following format: <number>. <diagnosis>""".strip()
         '''
         
+        '''
         prompt = f"""\ 
         You are a professional medical doctor specializing in diagnostics. Based on the following patient profile, provide the most accurate diagnosis:
         
@@ -54,6 +63,20 @@ class ClassificationAgent(Agent):
         
         Your response must strictly follow the format: <number>. <diagnosis>.
         """
+        '''
+        
+        prompt = f"""\ 
+        You are a professional medical doctor specializing in diagnostics. 
+        Based on the following patient profile, provide the most accurate diagnosis:
+        
+        Patient Profile:
+        {text}
+        
+        Possible Diagnoses:
+        {option_text}
+        
+        Make sure to provide your diagnosis in the following the format: <number>. <diagnosis>.""".strip()
+
         return strip_all_lines(prompt)
 
     @staticmethod
@@ -65,6 +88,7 @@ class ClassificationAgent(Agent):
 
     @staticmethod
     def get_fewshot_template(option_text: str, text: str,) -> str:
+        '''
         prompt = f"""\
         Act as a medical doctor and diagnose the patient based on the provided patient profile.
         
@@ -80,7 +104,24 @@ class ClassificationAgent(Agent):
         {text}        
         
         Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>"""
+        '''
         
+        prompt = f"""\
+        You are a professional medical doctor specializing in diagnostics. 
+        Your job is to analyze patient profiles and provide the most accurate diagnosis. 
+        
+        Possible Diagnoses:
+        {option_text}
+
+        Example Cases:
+        
+        {{fewshot_text}}
+        
+        Patient Profile:
+        {text} 
+        
+        Make sure to provide your diagnosis in the following the format: <number>. <diagnosis>.""".strip()
+
         return strip_all_lines(prompt)
     
     def generate_response(self, messages: list) -> str:
@@ -186,7 +227,6 @@ class ClassificationAgent(Agent):
         # TODO
         self.reset_log_info()
         option_text = '\n'.join([f"{str(k)}. {v}" for k, v in label2desc.items()])
-        #option_text = "\n".join([f"{k}. {v} ({'High Risk' if 'severe' in v.lower() else 'Low Risk'})" for k, v in label2desc.items()])
         system_prompt = self.get_system_prompt()
         prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
         prompt_fewshot = self.get_fewshot_template(option_text, text)
