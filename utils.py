@@ -1,353 +1,260 @@
-import re
-import random
-from base import Agent
-from colorama import Fore, Style
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-import warnings
-from transformers import logging as transformers_logging
+import faiss
+import random
+import logging
+import numpy as np
+from enum import Enum
+from pathlib import Path
+from transformers import AutoTokenizer, AutoModel
 
-from utils import RAG, AdaptiveRAG, strip_all_lines
+import json
 
-# Ignore warning messages from transformers
-warnings.filterwarnings("ignore")
-transformers_logging.set_verbosity_error()
+class JSONLinesHandler(logging.FileHandler):
+    def emit(self, record):
+        log_entry = self.format(record)
+        with open(self.baseFilename, 'a') as file:
+            file.write(f"{log_entry}\n")
 
-class ClassificationAgent(Agent):
-    """
-    An agent that classifies text into one of the labels in the given label set.
-    """
-    @staticmethod
-    def get_system_prompt() -> str:
+def setup_logger(name, log_file, level=logging.INFO):
+    """Function to set up jsonlines logger."""
+    Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+    with open(log_file, 'w') as file:
+        pass  # create the file if it does not exist
+
+    formatter = logging.Formatter('%(message)s')  # Only message gets logged
+    handler = JSONLinesHandler(log_file)
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.addHandler(handler)
+
+    return logger
+
+def parse_pred_text(pred_text: str, label_set: set[str]) -> str:
+    """A simple heuristic parsing function for compatibility with the label_set."""
+    pred_text = pred_text.strip(" ().:")
+    if pred_text[0] in label_set:
+        pred_text = pred_text[0]
+    return pred_text
+
+def text_in_label_set(text: str, label_set: set[str]) -> bool:
+    text = text.lower().strip()
+    fuzzy_label_set = {label.lower() for label in label_set}
+    return text in fuzzy_label_set
+
+class RetrieveOrder(Enum):
+    SIMILAR_AT_TOP = "similar_at_top"  # the most similar retrieved chunk is ordered at the top
+    SIMILAR_AT_BOTTOM = "similar_at_bottom"  # reversed
+    RANDOM = "random"  # randomly shuffle the retrieved chunks
+
+class RAG:
+
+    def __init__(self, rag_config: dict) -> None:
+        self.tokenizer = AutoTokenizer.from_pretrained(rag_config["embedding_model"])
+        self.embed_model = AutoModel.from_pretrained(rag_config["embedding_model"]).eval()
+        
+        self.index = None
+        self.id2evidence = dict()
+        self.embed_dim = len(self.encode_data("Test embedding size"))
+        self.insert_acc = 0
+        
+        self.seed = rag_config["seed"]
+        self.top_k = rag_config["top_k"]
+        orders = {member.value for member in RetrieveOrder}
+        assert rag_config["order"] in orders
+        self.retrieve_order = rag_config["order"]
+        random.seed(self.seed)
+        
+        self.create_faiss_index()
+        
+        # TODO: make a file to save the inserted rows
         '''
-        system_prompt = """\
-        Act as a professional medical doctor that can diagnose the patient based on the patient profile.
-        Provide your diagnosis in the following format: <number>. <diagnosis>""".strip()
+        self.rag_filename = rag_config.get("rag_filename", "rag_data.jsonl")
+        if Path(self.rag_filename).exists():
+            with open(self.rag_filename, 'r', encoding='utf-8') as f:
+                for line in f:
+                    row = json.loads(line.strip())
+                    self.insert(row["key"], row["value"])
+        '''
+
+    def create_faiss_index(self):
+        # Create a FAISS index
+        self.index = faiss.IndexFlatL2(self.embed_dim)
+
+    def encode_data(self, sentence: str) -> np.ndarray:
+        # Tokenize the sentence
+        encoded_input = self.tokenizer([sentence], padding=True, truncation=True, return_tensors="pt")
+        # Compute token embeddings
+        with torch.no_grad():
+            model_output = self.embed_model(**encoded_input)
+            # Perform pooling. In this case, cls pooling.
+            sentence_embeddings = model_output[0][:, 0]
+        feature = sentence_embeddings.numpy()[0]
+        norm = np.linalg.norm(feature)
+        return feature / norm
+
+    def insert(self, key: str, value: str) -> None:
+        """Use the key text as the embedding for future retrieval of the value text."""
+        embedding = self.encode_data(key).astype('float32')  # Ensure the data type is float32
+        self.index.add(np.expand_dims(embedding, axis=0))
+        self.id2evidence[str(self.insert_acc)] = value
+        
+        '''
+        with open(self.rag_filename, 'a', encoding='utf-8') as f:
+            json.dump({"key": key, "value": value}, f)
+            f.write("\n")
         '''
         
-        system_prompt = """\
-        You are a highly skilled medical diagnostic AI. Your job is to analyze patient profiles and provide accurate and concise diagnoses. Make sure to always follow the given instructions and adhere to the response format: <number>. <diagnosis>.
-        """
-        return strip_all_lines(system_prompt)
+        self.insert_acc += 1
 
-    @staticmethod
-    def get_zeroshot_prompt(option_text: str, text: str) -> str:
-        '''
-        prompt = f"""\
-        Act as a medical doctor and diagnose the patient based on the following patient profile:
-        {text}
-
-        All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
-        {option_text}
-
-        Now, directly provide the diagnosis for the patient in the following format: <number>. <diagnosis>""".strip()
-        '''
+    def retrieve(self, query: str, top_k: int) -> list[str]:
+        """Retrieve top-k text chunks"""
+        embedding = self.encode_data(query).astype('float32')  # Ensure the data type is float32
+        top_k = min(top_k, self.insert_acc)
+        distances, indices = self.index.search(np.expand_dims(embedding, axis=0), top_k)
+        distances = distances[0].tolist()
+        indices = indices[0].tolist()
         
-        prompt = f"""\ 
-        You are a professional medical doctor specializing in diagnostics. Based on the following patient profile, provide the most accurate diagnosis:
+        results = [{'link': str(idx), '_score': {'faiss': dist}} for dist, idx in zip(distances, indices)]
+        # Re-order the sequence based on self.retrieve_order
+        if self.retrieve_order == RetrieveOrder.SIMILAR_AT_BOTTOM.value:
+            results = list(reversed(results))
+        elif self.retrieve_order == RetrieveOrder.RANDOM.value:
+            random.shuffle(results)
         
-        Patient Profile:
-        {text}
-        
-        Possible Diagnoses:
-        {option_text}
-        
-        Your response must strictly follow the format: <number>. <diagnosis>.
-        """
-        return strip_all_lines(prompt)
-
-    @staticmethod
-    def get_shot_template() -> str:
-        prompt = f"""\
-        {{question}}
-        Diagnosis: {{answer}}"""
-        return strip_all_lines(prompt)
-
-    @staticmethod
-    def get_fewshot_template(option_text: str, text: str,) -> str:
-        prompt = f"""\
-        Act as a medical doctor and diagnose the patient based on the provided patient profile.
-        
-        All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
-        {option_text}
-
-        Here are some example cases.
-        
-        {{fewshot_text}}
-        
-        Now it's your turn.
-        
-        {text}        
-        
-        Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>"""
-        
-        return strip_all_lines(prompt)
+        text_list = [self.id2evidence[result["link"]] for result in results]
+        return text_list
     
-    def generate_response(self, messages: list) -> str:
-        """
-        Generate a response using the local model.
-        """
-        text_chat = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
+class AdaptiveRAG:
+    def __init__(self, rag_config: dict):
+        self.tokenizer = AutoTokenizer.from_pretrained(rag_config["embedding_model"])
+        self.embed_model = AutoModel.from_pretrained(rag_config["embedding_model"]).eval()
+        self.index = faiss.IndexFlatL2(rag_config.get("embed_dim", 768))
+        self.id2evidence = {}
+        self.insert_acc = 0
+        self.top_k = rag_config["top_k"]
+        
+        self.default_weight = 1.0
+        
+        self.retrieve_count = {}
+        self.insert_order = {}
+
+    def encode_data(self, text: str) -> np.ndarray:
+        tokens = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        with torch.no_grad():
+            embeddings = self.embed_model(**tokens).last_hidden_state[:, 0, :]
+        return embeddings.squeeze().numpy()
+
+    def insert(self, key: str, value: str):
+        embedding = self.encode_data(key).astype("float32")
+        self.index.add(embedding[np.newaxis, :])
+        self.id2evidence[str(self.insert_acc)] = value
+        self.retrieve_count[str(self.insert_acc)] = 0
+        self.insert_order[str(self.insert_acc)] = self.insert_acc
+        self.insert_acc += 1
+
+    def retrieve(self, query: str) -> list[tuple[str, float]]:
+        embedding = self.encode_data(query).astype("float32")
+        distances, indices = self.index.search(embedding[np.newaxis, :], self.top_k)
+        
+        results = []
+        for idx, dist in zip(indices[0], distances[0]):
+            if idx == -1:
+                continue
+            evidence = self.id2evidence.get(str(idx), None)
+            if evidence:
+                results.append((evidence, 1.0 / (dist + 1e-5)))
+                self.retrieve_count[str(idx)] = self.retrieve_count.get(str(idx), 0) + 1
+        
+        return results
+
+    def adjust_weights(self, retrieval_scores):
+        max_score = max(retrieval_scores) if retrieval_scores else 1.0
+        weights = [score / max_score for score in retrieval_scores]
+        
+        return weights
+
+    def update_memory(self, top_k: int) -> None:
+        sorted_examples = sorted(
+            self.id2evidence.keys(),
+            key=lambda x: (self.retrieve_count.get(x, 0), self.insert_order.get(x, 0)),
+            reverse=True
         )
-        model_inputs = self.tokenizer([text_chat], return_tensors="pt").to(self.model.device)
-
-        generated_ids = self.model.generate(
-            **model_inputs,
-            max_new_tokens=self.llm_config["max_tokens"],
-            do_sample=False
-        )
-        generated_ids = [
-            output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
-        ]
-
-        return self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-    
-    @staticmethod
-    def extract_label(pred_text: str, label2desc: dict[str, str]) -> str:
-        numbers = re.findall(pattern=r"(\d+)\.", string=pred_text)
+        keep_indices = set(sorted_examples[:top_k])
         
-        if len(numbers) == 1:
-            number = numbers[0]
-            if int(number) in label2desc:
-                prediction = number
-            else:
-                print(Fore.RED + f"Prediction {pred_text} not found in the label set. Randomly select one." + Style.RESET_ALL)
-                prediction = random.choice(list(label2desc.keys()))
-        else:
-            if len(numbers) > 1:
-                print(Fore.YELLOW + f"Extracted numbers {numbers} is not exactly one. Select the first one." + Style.RESET_ALL)
-                prediction = numbers[0]
-            else:
-                print(Fore.RED + f"Prediction {pred_text} has no extracted numbers. Randomly select one." + Style.RESET_ALL)
-                prediction = random.choice(list(label2desc.keys()))
-        return str(prediction)
-
-    def __init__(self, config: dict) -> None:
-        """
-        Initialize your LLM here
-        """
+        self.id2evidence = {k: v for k, v in self.id2evidence.items() if k in keep_indices}
+        self.retrieve_count = {k: v for k, v in self.retrieve_count.items() if k in keep_indices}
+        self.insert_order = {k: v for k, v in self.insert_order.items() if k in keep_indices}
         
-        # TODO
-        super().__init__(config)
-        self.llm_config = config
-        if config['use_8bit']:
-            quantization_config = BitsAndBytesConfig(
-                load_in_8bit=True,
-                llm_int8_has_fp16_weight=False
-            )
-            self.model = AutoModelForCausalLM.from_pretrained(
-                config["model_name"],
-                quantization_config=quantization_config,
-                device_map=config["device"]
-            )
-        else:
-            self.model = AutoModelForCausalLM.from_pretrained(
-                config["model_name"],
-                torch_dtype=torch.float16,
-                device_map=config["device"]
-            )
-        self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
-        
-        '''
-        self.rag = RAG(config["rag"])
-        '''
-        self.rag = AdaptiveRAG(config["rag"])
-        
-        # Save the streaming inputs and outputs for iterative improvement
-        self.inputs = list()
-        self.self_outputs = list()
-        
-        self.model.eval()
-
-    def __call__(self, label2desc: dict[str, str], text: str) -> str:
-        """
-        Classify the text into one of the labels.
-
-        Args:
-            label2desc (dict[str, str]): A dictionary mapping each label to its description.
-            text (str): The text to classify.
-
-        Returns:
-            str: The label (should be a key in label2desc) that the text is classified into.
-
-        For example:
-        label2desc = {
-            "apple": "A fruit that is typically red, green, or yellow.",
-            "banana": "A long curved fruit that grows in clusters and has soft pulpy flesh and yellow skin when ripe.",
-            "cherry": "A small, round stone fruit that is typically bright or dark red.",
-        }
-        text = "The fruit is red and about the size of a tennis ball."
-        label = "apple" (should be a key in label2desc, i.e., ["apple", "banana", "cherry"])
-        """
-        
-        # TODO
-        self.reset_log_info()
-        option_text = '\n'.join([f"{str(k)}. {v}" for k, v in label2desc.items()])
-        #option_text = "\n".join([f"{k}. {v} ({'High Risk' if 'severe' in v.lower() else 'Low Risk'})" for k, v in label2desc.items()])
-        system_prompt = self.get_system_prompt()
-        prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
-        prompt_fewshot = self.get_fewshot_template(option_text, text)
-        
-        '''
-        shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
-        '''
-        
-        retrieval_results = self.rag.retrieve(query=text)
-        docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
-
-        weights = self.rag.adjust_weights(scores)
-        shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
-
-        if self.rag.insert_acc >= 150:
-            if len(shots) > 0:
-                fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
-                try:
-                    prompt = re.sub(pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot)
-                except Exception as e:
-                    error_msg = f"Error ```{e}``` caused by these shots. Using the zero-shot prompt."
-                    print(Fore.RED + error_msg + Fore.RESET)
-                    prompt = prompt_zeroshot
-            else:
-                print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
-                prompt = prompt_zeroshot
-        else:
-            prompt = prompt_zeroshot     
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
-        ]
-
-        response = self.generate_response(messages)
-        prediction = self.extract_label(response, label2desc)
-        
-        self.update_log_info(log_data={
-            "num_input_tokens": len(self.tokenizer.encode(system_prompt + prompt)),
-            "num_output_tokens": len(self.tokenizer.encode(response)),
-            "num_shots": str(len(shots)),
-            "input_pred": prompt,
-            "output_pred": response,
-        })
-        self.inputs.append(text)
-        self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
-        
-        return prediction
-    
-    def update(self, correctness: bool) -> bool:
-        """
-        Update your LLM agent based on the correctness of its own prediction at the current time step.
-
-        Args:
-            correctness (bool): Whether the prediction is correct.
-
-        Returns:
-            bool: Whether the prediction is correct.
-        """
-        
-        # TODO
-        if correctness:
-            question = self.inputs[-1]
-            answer = self.self_outputs[-1]
-            chunk = self.get_shot_template().format(question=question, answer=answer)
-            self.rag.insert(key=question, value=chunk)
+        self.index.reset()
+        for idx, evidence in self.id2evidence.items():
+            embedding = self.encode_data(evidence).astype("float32")
+            self.index.add(embedding[np.newaxis, :])
             
-            '''
-            if self.rag.insert_acc % 50 == 0:
-                self.rag.update_memory(top_k=500)
-            '''
-            
-            return True
-        
-        return False
+        print('Memory update!')
 
-class SQLGenerationAgent(Agent):
+def extract_json_string(res: str) -> str:
+    """Extract the first valid json string from the response string (of LLMs).
+    
+    Return '' (empty string) if not found. Raise ValueError if an } is found before any {.
     """
-    An agent that generates SQL code based on the given table schema and the user query.
-    """
-    def __init__(self, config: dict) -> None:
-        """
-        Initialize your LLM here
-        """
-        # TODO
-        raise NotImplementedError
+    start, end = -1, -1
+    cnt = 0  # act as a representation of a stack of '{' '}' pairs
+    for i in range(len(res)):
+        ch = res[i]
+        if ch == '{':
+            if cnt == 0:  # the first time '{' is encountered
+                start = i
+            cnt += 1
+        elif ch == '}':
+            if cnt <= 0:
+                raise ValueError("found } before any { appears")
+            cnt -= 1
+            if cnt == 0:  # found the end index
+                end = i
+                break
+    return res[start:end+1]
 
-    def __call__(
-        self,
-        table_schema: str,
-        user_query: str
-    ) -> str:
-        """
-        Generate SQL code based on the given table schema and the user query.
+def strip_all_lines(s: str) -> str:
+    """Remove all leading and trailing spaces of each line in the string."""
+    return '\n'.join([line.strip() for line in s.splitlines()])
 
-        Args:
-            table_schema (str): The table schema.
-            user_query (str): The user query.
-
-        Returns:
-            str: The SQL code that the LLM generates.
-        """
-        # TODO: Note that your output should be a valid SQL code only.
-        raise NotImplementedError
-
-    def update(self, correctness: bool) -> bool:
-        """
-        Update your LLM agent based on the correctness of its own SQL    code at the current time step.
-        """
-        # TODO
-        raise NotImplementedError
-        
 if __name__ == "__main__":
-    from argparse import ArgumentParser
-    from execution_pipeline import main
-
-    parser = ArgumentParser()
-    parser.add_argument('--bench_name', type=str, required=True)
-    parser.add_argument('--model_name', type=str, default="Qwen/Qwen2.5-7B-Instruct")
-    parser.add_argument('--device', type=str, default="cuda:0")
-    parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--use_8bit', action='store_true')
-    parser.add_argument('--output_path', type=str, default=None, help='path to save csv file for kaggle submission')
-    parser.add_argument('--use_wandb', action='store_true')
-    args = parser.parse_args()
-
-    if args.bench_name.startswith("classification"):
-        max_tokens = 16
-        agent_name = ClassificationAgent
-    elif args.bench_name.startswith("sql_generation"):
-        max_tokens = 512
-        agent_name = SQLGenerationAgent
-    else:
-        raise ValueError(f"Invalid benchmark name: {args.bench_name}")
-
-    bench_cfg = {
-        'bench_name': args.bench_name,
-        'output_path': args.output_path
+# Initialize RAG with a configuration dictionary
+    rag_config = {
+        "embedding_model": "BAAI/bge-base-en-v1.5",
+        "rag_filename": "test_rag_pool",
+        "seed": 42,
+        "top_k": 5,
+        "order": "similar_at_top"  # ["similar_at_top", "similar_at_bottom", "random"]
     }
-    llm_config = {
-        # TODO: specify your configs for the agent here
-        'model_name': args.model_name,
-        'exp_name': f'adaptive_rag_{args.bench_name}_{args.model_name}',
-        'bench_name': bench_cfg['bench_name'],
-        'max_tokens': max_tokens,
-        'do_sample': False,
-        'device': args.device,
-        'use_8bit': args.use_8bit,
-        'rag': {
-            #'embedding_model': 'BAAI/bge-base-en-v1.5',
-            'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
-            #'embedding_model': 'medicalai/ClinicalBERT',
-            #'embedding_model': 'emilyalsentzer/Bio_ClinicalBERT',
-            #'embedding_model': 'NeuML/pubmedbert-base-embeddings',
-            #'embedding_model': 'pritamdeka/S-PubMedBert-MS-MARCO',
-            #'embedding_model': 'abhinand/MedEmbed-large-v0.1',
-            'seed': 42,
-            'top_k': 16,
-            'order': 'similar_at_top',
-            'embed_dim': 768,
-        }
-    }
-    agent = agent_name(llm_config)
-    main(agent, bench_cfg, debug=args.debug, use_wandb=args.use_wandb, wandb_name=llm_config["exp_name"], wandb_config=llm_config)
+    rag = RAG(rag_config)
+
+    # Key-value pairs for testing
+    key_value_pairs = [
+        ("Apple is my favorite fruit", "Oh really?"),
+        ("What is your favorite fruit?", "Lettuce, tomato, and spinach."),
+        ("What is your favorite vegetable?", "Apple, banana, and watermelon."),
+        ("What do you like to read in your free time?", "Sherlock Holmes")
+    ]
+
+    # Insert the key-value pairs into the RAG
+    for key, value in key_value_pairs:
+        rag.insert(key, key + ' ' + value)
+
+    from pprint import pprint
+
+    query = "I like to eat lettuce."
+    results = rag.retrieve(query, top_k=rag_config["top_k"])
+    pprint(results)
+
+def merge_dicts(dicts: list[dict]) -> dict:
+    d = dict()
+    for dd in dicts:
+        for k, v in dd.items():
+            if (k in d) and (d[k] != v):
+                print(k, d[k], v)
+                raise ValueError("Found duplicated and inconsistent key-value pair.")
+            d[k] = v
+    return d
