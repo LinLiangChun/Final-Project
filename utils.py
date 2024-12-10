@@ -223,8 +223,7 @@ def strip_all_lines(s: str) -> str:
 if __name__ == "__main__":
 # Initialize RAG with a configuration dictionary
     rag_config = {
-        #"embedding_model": "BAAI/bge-base-en-v1.5",
-        "embedding_model": "sentence-transformers/all-mpnet-base-v2",
+        "embedding_model": "BAAI/bge-base-en-v1.5",
         "rag_filename": "test_rag_pool",
         "seed": 42,
         "top_k": 5,
