@@ -88,7 +88,6 @@ class ClassificationAgent(Agent):
 
     @staticmethod
     def get_fewshot_template(option_text: str, text: str,) -> str:
-        '''
         prompt = f"""\
         Act as a medical doctor and diagnose the patient based on the provided patient profile.
         
@@ -104,23 +103,6 @@ class ClassificationAgent(Agent):
         {text}        
         
         Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>"""
-        '''
-        
-        prompt = f"""\
-        You are a professional medical doctor specializing in diagnostics. 
-        Your job is to analyze patient profiles and provide the most accurate diagnosis. 
-        
-        Possible Diagnoses:
-        {option_text}
-
-        Example Cases:
-        
-        {{fewshot_text}}
-        
-        Patient Profile:
-        {text} 
-        
-        Make sure to provide your diagnosis in the following the format: <number>. <diagnosis>.""".strip()
 
         return strip_all_lines(prompt)
     
