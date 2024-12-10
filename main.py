@@ -185,8 +185,8 @@ class ClassificationAgent(Agent):
         
         # TODO
         self.reset_log_info()
-        #option_text = '\n'.join([f"{str(k)}. {v}" for k, v in label2desc.items()])
-        option_text = "\n".join([f"{k}. {v} ({'High Risk' if 'severe' in v.lower() else 'Low Risk'})" for k, v in label2desc.items()])
+        option_text = '\n'.join([f"{str(k)}. {v}" for k, v in label2desc.items()])
+        #option_text = "\n".join([f"{k}. {v} ({'High Risk' if 'severe' in v.lower() else 'Low Risk'})" for k, v in label2desc.items()])
         system_prompt = self.get_system_prompt()
         prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
         prompt_fewshot = self.get_fewshot_template(option_text, text)
