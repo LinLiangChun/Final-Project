@@ -19,13 +19,20 @@ class ClassificationAgent(Agent):
     """
     @staticmethod
     def get_system_prompt() -> str:
+        '''
         system_prompt = """\
         Act as a professional medical doctor that can diagnose the patient based on the patient profile.
         Provide your diagnosis in the following format: <number>. <diagnosis>""".strip()
+        '''
+        
+        system_prompt = """\
+        You are a highly skilled medical diagnostic AI. Your job is to analyze patient profiles and provide accurate and concise diagnoses. Make sure to always follow the given instructions and adhere to the response format: <number>. <diagnosis>.
+        """
         return strip_all_lines(system_prompt)
 
     @staticmethod
     def get_zeroshot_prompt(option_text: str, text: str) -> str:
+        '''
         prompt = f"""\
         Act as a medical doctor and diagnose the patient based on the following patient profile:
         {text}
@@ -34,6 +41,19 @@ class ClassificationAgent(Agent):
         {option_text}
 
         Now, directly provide the diagnosis for the patient in the following format: <number>. <diagnosis>""".strip()
+        '''
+        
+        prompt = f"""\ 
+        You are a professional medical doctor specializing in diagnostics. Based on the following patient profile, provide the most accurate diagnosis:
+        
+        Patient Profile:
+        {text}
+        
+        Possible Diagnoses:
+        {option_text}
+        
+        Your response must strictly follow the format: <number>. <diagnosis>.
+        """
         return strip_all_lines(prompt)
 
     @staticmethod
@@ -165,7 +185,8 @@ class ClassificationAgent(Agent):
         
         # TODO
         self.reset_log_info()
-        option_text = '\n'.join([f"{str(k)}. {v}" for k, v in label2desc.items()])
+        #option_text = '\n'.join([f"{str(k)}. {v}" for k, v in label2desc.items()])
+        option_text = "\n".join([f"{k}. {v} ({'High Risk' if 'severe' in v.lower() else 'Low Risk'})" for k, v in label2desc.items()])
         system_prompt = self.get_system_prompt()
         prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
         prompt_fewshot = self.get_fewshot_template(option_text, text)
@@ -316,16 +337,16 @@ if __name__ == "__main__":
         'use_8bit': args.use_8bit,
         'rag': {
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
-            #'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
+            'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             #'embedding_model': 'medicalai/ClinicalBERT',
             #'embedding_model': 'emilyalsentzer/Bio_ClinicalBERT',
             #'embedding_model': 'NeuML/pubmedbert-base-embeddings',
             #'embedding_model': 'pritamdeka/S-PubMedBert-MS-MARCO',
-            'embedding_model': 'abhinand/MedEmbed-large-v0.1',
+            #'embedding_model': 'abhinand/MedEmbed-large-v0.1',
             'seed': 42,
             'top_k': 16,
             'order': 'similar_at_top',
-            'embed_dim': 1024, #768
+            'embed_dim': 768,
         }
     }
     agent = agent_name(llm_config)
