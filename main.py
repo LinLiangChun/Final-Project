@@ -27,7 +27,7 @@ class ClassificationAgent(Agent):
         
         system_prompt = """\
         Act as a professional medical doctor that can diagnose the patient based on the patient profile and provide the reasoning process step-by-step.
-        Provide your diagnosis and reasoning concisely in the following format:
+        Provide your diagnosis and reasoning concisely in the following format (within 50 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>""".strip()
         
@@ -53,7 +53,7 @@ class ClassificationAgent(Agent):
         All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
         {option_text}
 
-        Provide your diagnosis and reasoning concisely in the following format:
+        Provide your diagnosis and reasoning concisely in the following format (within 50 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>""".strip()
         
@@ -108,7 +108,7 @@ class ClassificationAgent(Agent):
         
         {text} 
 
-        Provide your diagnosis and reasoning concisely in the following format:
+        Provide your diagnosis and reasoning concisely in the following format (within 50 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>"""
         
@@ -139,7 +139,7 @@ class ClassificationAgent(Agent):
         
         generated_text = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
         
-        diagnosis = re.search(r"Diagnosis:\s*(\d+\..*?)(?=Reasoning:|$)", generated_text, re.S)
+        diagnosis = re.search(r"Diagnosis:\s*(\d+\..*?)(?=\s*Reasoning:|$)", generated_text, re.S)
         reasoning = re.search(r"Reasoning:\s*(.*)", generated_text, re.S)
 
         print(generated_text)
