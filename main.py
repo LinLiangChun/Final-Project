@@ -254,20 +254,20 @@ class ClassificationAgent(Agent):
         weights = self.rag.adjust_weights(scores)
         shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
 
-        #if self.rag.insert_acc >= 150:
-        if len(shots) > 0:
-            fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
-            try:
-                prompt = re.sub(pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot)
-            except Exception as e:
-                error_msg = f"Error ```{e}``` caused by these shots. Using the zero-shot prompt."
-                print(Fore.RED + error_msg + Fore.RESET)
+        if self.rag.insert_acc >= 100:
+            if len(shots) > 0:
+                fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
+                try:
+                    prompt = re.sub(pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot)
+                except Exception as e:
+                    error_msg = f"Error ```{e}``` caused by these shots. Using the zero-shot prompt."
+                    print(Fore.RED + error_msg + Fore.RESET)
+                    prompt = prompt_zeroshot
+            else:
+                print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
                 prompt = prompt_zeroshot
         else:
-            print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
             prompt = prompt_zeroshot
-        #else:
-            #prompt = prompt_zeroshot
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -387,10 +387,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.bench_name.startswith("classification"):
-        '''
         max_tokens = 16
-        '''
-        max_tokens = 128
         agent_name = ClassificationAgent
     elif args.bench_name.startswith("sql_generation"):
         max_tokens = 512
