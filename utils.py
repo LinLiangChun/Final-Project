@@ -49,7 +49,6 @@ class RetrieveOrder(Enum):
     RANDOM = "random"  # randomly shuffle the retrieved chunks
 
 class RAG:
-
     def __init__(self, rag_config: dict) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained(rag_config["embedding_model"])
         self.embed_model = AutoModel.from_pretrained(rag_config["embedding_model"]).eval()
@@ -67,16 +66,7 @@ class RAG:
         random.seed(self.seed)
         
         self.create_faiss_index()
-        
         # TODO: make a file to save the inserted rows
-        '''
-        self.rag_filename = rag_config.get("rag_filename", "rag_data.jsonl")
-        if Path(self.rag_filename).exists():
-            with open(self.rag_filename, 'r', encoding='utf-8') as f:
-                for line in f:
-                    row = json.loads(line.strip())
-                    self.insert(row["key"], row["value"])
-        '''
 
     def create_faiss_index(self):
         # Create a FAISS index
@@ -99,13 +89,6 @@ class RAG:
         embedding = self.encode_data(key).astype('float32')  # Ensure the data type is float32
         self.index.add(np.expand_dims(embedding, axis=0))
         self.id2evidence[str(self.insert_acc)] = value
-        
-        '''
-        with open(self.rag_filename, 'a', encoding='utf-8') as f:
-            json.dump({"key": key, "value": value}, f)
-            f.write("\n")
-        '''
-        
         self.insert_acc += 1
 
     def retrieve(self, query: str, top_k: int) -> list[str]:
