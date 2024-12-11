@@ -26,8 +26,8 @@ class ClassificationAgent(Agent):
         '''
         
         system_prompt = """\
-        Act as a professional medical doctor that can diagnose the patient based on the patient profile and provide the reasoning process step-by-step.
-        Provide your diagnosis and reasoning concisely in the following format (within 50 words):
+        Act as a professional medical doctor that can diagnose the patient based on the patient profile and provide the reasoning process concisely.
+        Provide your diagnosis and reasoning concisely in the following format (within 100 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>""".strip()
         
@@ -53,7 +53,7 @@ class ClassificationAgent(Agent):
         All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
         {option_text}
 
-        Provide your diagnosis and reasoning concisely in the following format (within 50 words):
+        Provide your diagnosis and reasoning concisely in the following format (within 100 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>""".strip()
         
@@ -108,7 +108,7 @@ class ClassificationAgent(Agent):
         
         {text} 
 
-        Provide your diagnosis and reasoning concisely in the following format (within 50 words):
+        Provide your diagnosis and reasoning concisely in the following format (within 100 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>"""
         
@@ -135,16 +135,17 @@ class ClassificationAgent(Agent):
             output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
         ]
         
-        #return self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        '''
+        return self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        '''
         
         generated_text = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-        
         diagnosis = re.search(r"Diagnosis:\s*(\d+\..*?)(?=\s*Reasoning:|$)", generated_text, re.S)
         reasoning = re.search(r"Reasoning:\s*(.*)", generated_text, re.S)
 
         return {
-            "diagnosis": diagnosis.group(1).strip() if diagnosis else "No diagnosis provided",
-            "reasoning": reasoning.group(1).strip() if reasoning else "No reasoning provided"
+            "diagnosis": diagnosis.group(1).strip() if diagnosis else "No Diagnosis",
+            "reasoning": reasoning.group(1).strip() if reasoning else "No Reasoning"
         }
 
     @staticmethod
@@ -173,8 +174,6 @@ class ClassificationAgent(Agent):
         '''
         return str(prediction)
         '''
-        
-        print(reasoning)
         
         return str(prediction), reasoning
 
@@ -207,6 +206,7 @@ class ClassificationAgent(Agent):
         '''
         self.rag = RAG(config["rag"])
         '''
+        
         self.rag = AdaptiveRAG(config["rag"])
         
         # Save the streaming inputs and outputs for iterative improvement
@@ -254,23 +254,20 @@ class ClassificationAgent(Agent):
         weights = self.rag.adjust_weights(scores)
         shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
 
-        if self.rag.insert_acc >= 150:
-            if len(shots) > 0:
-                fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
-                try:
-                    prompt = re.sub(pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot)
-                except Exception as e:
-                    error_msg = f"Error ```{e}``` caused by these shots. Using the zero-shot prompt."
-                    print(Fore.RED + error_msg + Fore.RESET)
-                    prompt = prompt_zeroshot
-            else:
-                print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
+        #if self.rag.insert_acc >= 150:
+        if len(shots) > 0:
+            fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
+            try:
+                prompt = re.sub(pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot)
+            except Exception as e:
+                error_msg = f"Error ```{e}``` caused by these shots. Using the zero-shot prompt."
+                print(Fore.RED + error_msg + Fore.RESET)
                 prompt = prompt_zeroshot
         else:
-            prompt = prompt_zeroshot     
-        
-        print('----------------------------')
-        print(prompt)
+            print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
+            prompt = prompt_zeroshot
+        #else:
+            #prompt = prompt_zeroshot
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -293,14 +290,12 @@ class ClassificationAgent(Agent):
         self.reasoning_logs = {
             "input": text,
             "reasoning": reasoning,
-            "diagnosis": f"{prediction}. {label2desc[int(prediction)]}"
+            "diagnosis": f"{str(prediction)}. {label2desc[int(prediction)]}"
         }
         
         '''
         self.inputs.append(text)
         self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
-        
-        return prediction
         '''
         
         return prediction
@@ -324,6 +319,7 @@ class ClassificationAgent(Agent):
             chunk = self.get_shot_template().format(question=question, answer=answer)
             self.rag.insert(key=question, value=chunk)
         '''
+        
         if correctness and self.reasoning_logs:
             question = self.reasoning_logs["input"]
             reasoning = self.reasoning_logs["reasoning"]
@@ -337,7 +333,6 @@ class ClassificationAgent(Agent):
             '''
             
             return True
-        
         return False
 
 class SQLGenerationAgent(Agent):
@@ -391,7 +386,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.bench_name.startswith("classification"):
-        #max_tokens = 16
+        '''
+        max_tokens = 16
+        '''
         max_tokens = 128
         agent_name = ClassificationAgent
     elif args.bench_name.startswith("sql_generation"):
