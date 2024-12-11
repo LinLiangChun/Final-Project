@@ -131,8 +131,8 @@ class ClassificationAgent(Agent):
             )
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
         
-        self.rag = RAG(config["rag"])
-        #self.rag = AdaptiveRAG(config["rag"])
+        #self.rag = RAG(config["rag"])
+        self.rag = AdaptiveRAG(config["rag"])
         
         # Save the streaming inputs and outputs for iterative improvement
         self.inputs = list()
@@ -314,8 +314,8 @@ if __name__ == "__main__":
         'device': args.device,
         'use_8bit': args.use_8bit,
         'rag': {
-            #'embedding_model': 'BAAI/bge-base-en-v1.5',
-            'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
+            'embedding_model': 'BAAI/bge-base-en-v1.5',
+            #'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             #'embedding_model': 'medicalai/ClinicalBERT',
             #'embedding_model': 'emilyalsentzer/Bio_ClinicalBERT',
             #'embedding_model': 'NeuML/pubmedbert-base-embeddings',
