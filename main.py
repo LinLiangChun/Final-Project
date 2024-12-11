@@ -329,7 +329,7 @@ class ClassificationAgent(Agent):
             question = self.reasoning_logs["input"]
             reasoning = self.reasoning_logs["reasoning"]
             diagnosis = self.reasoning_logs["diagnosis"]
-            chunk = f"Patient Profile: {question}\nReasoning: {reasoning}\nDiagnosis: {diagnosis}"
+            chunk = f"{question}\nReasoning: {reasoning}\nDiagnosis: {diagnosis}"
             self.rag.insert(key=question, value=chunk)
         
             '''
@@ -397,7 +397,7 @@ if __name__ == "__main__":
 
     if args.bench_name.startswith("classification"):
         #max_tokens = 16
-        max_tokens = 256
+        max_tokens = 512
         agent_name = ClassificationAgent
     elif args.bench_name.startswith("sql_generation"):
         max_tokens = 512
