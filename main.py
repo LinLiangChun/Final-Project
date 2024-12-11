@@ -142,12 +142,6 @@ class ClassificationAgent(Agent):
         diagnosis = re.search(r"Diagnosis:\s*(\d+\..*?)(?=\s*Reasoning:|$)", generated_text, re.S)
         reasoning = re.search(r"Reasoning:\s*(.*)", generated_text, re.S)
 
-        print(generated_text)
-        print()
-        print(reasoning)
-        print()
-        print(diagnosis)
-
         return {
             "diagnosis": diagnosis.group(1).strip() if diagnosis else "No diagnosis provided",
             "reasoning": reasoning.group(1).strip() if reasoning else "No reasoning provided"
@@ -179,6 +173,8 @@ class ClassificationAgent(Agent):
         '''
         return str(prediction)
         '''
+        
+        print(reasoning)
         
         return str(prediction), reasoning
 
@@ -272,6 +268,9 @@ class ClassificationAgent(Agent):
                 prompt = prompt_zeroshot
         else:
             prompt = prompt_zeroshot     
+        
+        print('----------------------------')
+        print(prompt)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -337,10 +336,6 @@ class ClassificationAgent(Agent):
                 self.rag.update_memory(top_k=500)
             '''
             
-            print()
-            print(chunk)
-            print()
-            
             return True
         
         return False
@@ -397,7 +392,7 @@ if __name__ == "__main__":
 
     if args.bench_name.startswith("classification"):
         #max_tokens = 16
-        max_tokens = 512
+        max_tokens = 128
         agent_name = ClassificationAgent
     elif args.bench_name.startswith("sql_generation"):
         max_tokens = 512
