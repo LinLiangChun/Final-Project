@@ -26,10 +26,10 @@ class ClassificationAgent(Agent):
         '''
         
         system_prompt = """\
-        Act as a professional medical doctor that can diagnose the patient based on the patient profile.
-        Provide your reasoning process step-by-step, and then provide your diagnosis in the following format:
-        Reasoning: <step-by-step reasoning>
-        Diagnosis: <number>. <diagnosis>""".strip()
+        Act as a professional medical doctor that can diagnose the patient based on the patient profile and provide the reasoning process step-by-step.
+        Provide your diagnosis and reasoning concisely in the following format:
+        Diagnosis: <number>. <diagnosis>
+        Reasoning: <concise reasoning>""".strip()
         
         return strip_all_lines(system_prompt)
 
@@ -49,25 +49,34 @@ class ClassificationAgent(Agent):
         prompt = f"""\ 
         Act as a medical doctor and diagnose the patient based on the following patient profile:
         {text}
-        
+
         All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
         {option_text}
-        
-        Now provide your reasoning process step-by-step, and then provide your diagnosis in the following format:
-        Reasoning: <step-by-step reasoning>
-        Diagnosis: <number>. <diagnosis>""".strip()
+
+        Provide your diagnosis and reasoning concisely in the following format:
+        Diagnosis: <number>. <diagnosis>
+        Reasoning: <concise reasoning>""".strip()
         
         return strip_all_lines(prompt)
 
     @staticmethod
     def get_shot_template() -> str:
+        '''
         prompt = f"""\
         {{question}}
         Diagnosis: {{answer}}"""
+        '''
+        
+        prompt = f"""\ 
+        Patient Profile: {{question}}
+        Diagnosis: {{answer}}
+        Reasoning: {{reasoning}}"""
+        
         return strip_all_lines(prompt)
 
     @staticmethod
     def get_fewshot_template(option_text: str, text: str,) -> str:
+        '''
         prompt = f"""\
         Act as a medical doctor and diagnose the patient based on the provided patient profile.
         
@@ -83,13 +92,33 @@ class ClassificationAgent(Agent):
         {text}        
         
         Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>"""
+        '''
+        
+        prompt = f"""\ 
+        Act as a medical doctor and diagnose the patient based on the provided patient profile.
+        
+        All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
+        {option_text}
+
+        Here are some example cases.
+        
+        {{fewshot_text}}
+        
+        Now it's your turn.
+        
+        {text} 
+
+        Provide your diagnosis and reasoning concisely in the following format:
+        Diagnosis: <number>. <diagnosis>
+        Reasoning: <concise reasoning>"""
         
         return strip_all_lines(prompt)
-    
+
     def generate_response(self, messages: list) -> str:
         """
         Generate a response using the local model.
         """
+        
         text_chat = self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,
@@ -105,21 +134,31 @@ class ClassificationAgent(Agent):
         generated_ids = [
             output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
         ]
-
+        
         #return self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-    
-        response_text = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        
+        generated_text = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        
+        diagnosis = re.search(r"Diagnosis:\s*(\d+\..*?)(?=Reasoning:|$)", generated_text, re.S)
+        reasoning = re.search(r"Reasoning:\s*(.*)", generated_text, re.S)
 
-        reasoning = re.search(r"Reasoning:(.*?)(?:Diagnosis:|$)", response_text, re.S)
-        diagnosis = re.search(r"Diagnosis:(.*?)(?:$)", response_text, re.S)
+        print(generated_text)
+        print()
+        print(reasoning)
+        print()
+        print(diagnosis)
+
         return {
-            "reasoning": reasoning.group(1).strip() if reasoning else "",
-            "diagnosis": diagnosis.group(1).strip() if diagnosis else ""
+            "diagnosis": diagnosis.group(1).strip() if diagnosis else "No diagnosis provided",
+            "reasoning": reasoning.group(1).strip() if reasoning else "No reasoning provided"
         }
-    
-    '''
+
     @staticmethod
-    def extract_label(pred_text: str, label2desc: dict[str, str]) -> str:
+    #def extract_label(pred_text: str, label2desc: dict[str, str]) -> str:
+    def extract_label(response: dict, label2desc: dict[str, str]) -> tuple:
+        pred_text = response.get("diagnosis", "")
+        reasoning = response.get("reasoning", "")
+        
         numbers = re.findall(pattern=r"(\d+)\.", string=pred_text)
         
         if len(numbers) == 1:
@@ -136,35 +175,12 @@ class ClassificationAgent(Agent):
             else:
                 print(Fore.RED + f"Prediction {pred_text} has no extracted numbers. Randomly select one." + Style.RESET_ALL)
                 prediction = random.choice(list(label2desc.keys()))
+        
+        '''
         return str(prediction)
-    '''
-
-    @staticmethod
-    def extract_label(response: dict, label2desc: dict[str, str]) -> tuple:
-        """
-        Extract diagnosis and reasoning from the response.
-        """
-        pred_text = response.get("diagnosis", "")
-        reasoning = response.get("reasoning", "")
-
-        # Extract diagnosis number
-        numbers = re.findall(r"(\d+)\.", pred_text)
-        if len(numbers) == 1:
-            number = numbers[0]
-            if int(number) in label2desc:
-                prediction = number
-            else:
-                print(Fore.RED + f"Prediction {pred_text} not found in the label set. Randomly select one." + Style.RESET_ALL)
-                prediction = random.choice(list(label2desc.keys()))
-        else:
-            if len(numbers) > 1:
-                print(Fore.YELLOW + f"Extracted numbers {numbers} is not exactly one. Select the first one." + Style.RESET_ALL)
-                prediction = numbers[0]
-            else:
-                print(Fore.RED + f"Prediction {pred_text} has no extracted numbers. Randomly select one." + Style.RESET_ALL)
-                prediction = random.choice(list(label2desc.keys()))
-
-        return prediction, reasoning
+        '''
+        
+        return str(prediction), reasoning
 
     def __init__(self, config: dict) -> None:
         """
@@ -174,7 +190,6 @@ class ClassificationAgent(Agent):
         # TODO
         super().__init__(config)
         self.llm_config = config
-        
         if config['use_8bit']:
             quantization_config = BitsAndBytesConfig(
                 load_in_8bit=True,
@@ -198,11 +213,10 @@ class ClassificationAgent(Agent):
         '''
         self.rag = AdaptiveRAG(config["rag"])
         
-        self.reasoning_logs = []
-        
         # Save the streaming inputs and outputs for iterative improvement
         self.inputs = list()
         self.self_outputs = list()
+        self.reasoning_logs = None
         
         self.model.eval()
 
@@ -265,8 +279,8 @@ class ClassificationAgent(Agent):
         ]
 
         response = self.generate_response(messages)
-        prediction, reasoning = self.extract_label(response, label2desc)
-        
+        prediction, reasoning = ClassificationAgent.extract_label(response, label2desc)
+
         '''
         self.update_log_info(log_data={
             "num_input_tokens": len(self.tokenizer.encode(system_prompt + prompt)),
@@ -276,13 +290,19 @@ class ClassificationAgent(Agent):
             "output_pred": response,
         })
         '''
-        self.reasoning_logs.append({
+        
+        self.reasoning_logs = {
             "input": text,
             "reasoning": reasoning,
-            "diagnosis": prediction
-        })
+            "diagnosis": f"{prediction}. {label2desc[int(prediction)]}"
+        }
+        
+        '''
         self.inputs.append(text)
         self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
+        
+        return prediction
+        '''
         
         return prediction
     
@@ -298,22 +318,20 @@ class ClassificationAgent(Agent):
         """
         
         # TODO
+        '''
         if correctness:
-            '''
             question = self.inputs[-1]
             answer = self.self_outputs[-1]
-            chunk = f"Patient Profile: {question}\nReasoning: {reasoning}\nDiagnosis: {answer}"
+            chunk = self.get_shot_template().format(question=question, answer=answer)
             self.rag.insert(key=question, value=chunk)
-            '''
-            
-            current_log = self.reasoning_logs[-1]  # 取最後一條記錄
-            question = current_log["input"]
-            reasoning = current_log["reasoning"]
-            answer = current_log["diagnosis"]
-            
-            chunk = f"Patient Profile: {question}\nReasoning: {reasoning}\nDiagnosis: {answer}"
+        '''
+        if correctness and self.reasoning_logs:
+            question = self.reasoning_logs["input"]
+            reasoning = self.reasoning_logs["reasoning"]
+            diagnosis = self.reasoning_logs["diagnosis"]
+            chunk = f"Patient Profile: {question}\nReasoning: {reasoning}\nDiagnosis: {diagnosis}"
             self.rag.insert(key=question, value=chunk)
-            
+        
             '''
             if self.rag.insert_acc % 50 == 0:
                 self.rag.update_memory(top_k=500)
@@ -374,7 +392,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.bench_name.startswith("classification"):
-        max_tokens = 16
+        #max_tokens = 16
+        max_tokens = 256
         agent_name = ClassificationAgent
     elif args.bench_name.startswith("sql_generation"):
         max_tokens = 512
