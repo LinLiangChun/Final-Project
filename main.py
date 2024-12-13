@@ -394,7 +394,8 @@ class ClassificationAgent(Agent):
             question = self.reasoning_logs["input"]
             reasoning = self.reasoning_logs["reasoning"]
             diagnosis = self.reasoning_logs["diagnosis"]
-            chunk = f"{question}\nReasoning: {reasoning}\nDiagnosis: {diagnosis}"
+            #chunk = f"{question}\nReasoning: {reasoning}\nDiagnosis: {diagnosis}"
+            chunk = f"{question}\nDiagnosis: {diagnosis}"
             self.rag.insert(key=question, value=chunk)
         
             '''
