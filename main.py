@@ -84,11 +84,8 @@ class AdaptiveRAG:
         print('Memory update!')
 
 class ClassificationAgent(Agent):
-    """
-    An agent that classifies text into one of the labels in the given label set.
-    """
     @staticmethod
-    def get_system_prompt() -> str:        
+    def get_system_prompt() -> str:
         system_prompt = """\
         Act as a professional medical doctor that can diagnose the patient based on the patient profile and provide the reasoning process concisely.
         Provide your diagnosis and reasoning concisely in the following format (within 100 words):
@@ -98,7 +95,7 @@ class ClassificationAgent(Agent):
         return strip_all_lines(system_prompt)
 
     @staticmethod
-    def get_zeroshot_prompt(option_text: str, text: str) -> str:
+    def get_zeroshot_prompt(option_text: str, text: str) -> str:        
         prompt = f"""\ 
         Act as a medical doctor and diagnose the patient based on the following patient profile:
         {text}
@@ -143,10 +140,6 @@ class ClassificationAgent(Agent):
         return strip_all_lines(prompt)
 
     def generate_response(self, messages: list) -> str:
-        """
-        Generate a response using the local model.
-        """
-        
         text_chat = self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,
@@ -162,7 +155,7 @@ class ClassificationAgent(Agent):
         generated_ids = [
             output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
         ]
-        
+                
         generated_text = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
         diagnosis = re.search(r"Diagnosis:\s*(\d+\..*?)(?=\s*Reasoning:|$)", generated_text, re.S)
         reasoning = re.search(r"Reasoning:\s*(.*)", generated_text, re.S)
@@ -173,34 +166,30 @@ class ClassificationAgent(Agent):
         }
 
     @staticmethod
-    def extract_label(pred_text: dict, label2desc: dict[str, str]) -> tuple:
-        diagnosis = pred_text.get("diagnosis", "")
-        reasoning = pred_text.get("reasoning", "")
+    def extract_label(response: dict, label2desc: dict[str, str]) -> tuple:
+        pred_text = response.get("diagnosis", "")
+        reasoning = response.get("reasoning", "")
         
-        numbers = re.findall(pattern=r"(\d+)\.", string=diagnosis)
+        numbers = re.findall(pattern=r"(\d+)\.", string=pred_text)
         
         if len(numbers) == 1:
             number = numbers[0]
             if int(number) in label2desc:
                 prediction = number
             else:
-                print(Fore.RED + f"Prediction {diagnosis} not found in the label set. Randomly select one." + Style.RESET_ALL)
+                print(Fore.RED + f"Prediction {pred_text} not found in the label set. Randomly select one." + Style.RESET_ALL)
                 prediction = random.choice(list(label2desc.keys()))
         else:
             if len(numbers) > 1:
                 print(Fore.YELLOW + f"Extracted numbers {numbers} is not exactly one. Select the first one." + Style.RESET_ALL)
                 prediction = numbers[0]
             else:
-                print(Fore.RED + f"Prediction {diagnosis} has no extracted numbers. Randomly select one." + Style.RESET_ALL)
+                print(Fore.RED + f"Prediction {pred_text} has no extracted numbers. Randomly select one." + Style.RESET_ALL)
                 prediction = random.choice(list(label2desc.keys()))
         
         return str(prediction), reasoning
 
     def __init__(self, config: dict) -> None:
-        """
-        Initialize your LLM here
-        """
-        
         # TODO
         super().__init__(config)
         self.llm_config = config
@@ -227,18 +216,21 @@ class ClassificationAgent(Agent):
         # Save the streaming inputs and outputs for iterative improvement
         self.inputs = list()
         self.self_outputs = list()
-        
         self.reasoning_logs = None
         
         self.model.eval()
 
-    def __call__(self, label2desc: dict[str, str], text: str) -> str:        
+    def __call__(self, label2desc: dict[str, str], text: str) -> str:
         # TODO
         self.reset_log_info()
         option_text = '\n'.join([f"{str(k)}. {v}" for k, v in label2desc.items()])
         system_prompt = self.get_system_prompt()
         prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
         prompt_fewshot = self.get_fewshot_template(option_text, text)
+        
+        '''
+        shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
+        '''
         
         retrieval_results = self.rag.retrieve(query=text)
         docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
@@ -267,7 +259,7 @@ class ClassificationAgent(Agent):
         ]
 
         response = self.generate_response(messages)
-        prediction, reasoning = self.extract_label(response, label2desc)
+        prediction, reasoning = ClassificationAgent.extract_label(response, label2desc)
 
         '''
         self.update_log_info(log_data={
@@ -277,37 +269,41 @@ class ClassificationAgent(Agent):
             "input_pred": prompt,
             "output_pred": response,
         })
+        
+        self.inputs.append(text)
+        self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
         '''
         
-        self.update_log_info(log_data={
-            "num_input_tokens": len(self.tokenizer.encode(system_prompt + prompt)),
-            "num_output_tokens": len(self.tokenizer.encode(prediction)),
-            "num_shots": str(len(shots)),
-            "input_pred": prompt,
-            "output_pred": prediction,
-        })
-        
-        '''
         self.reasoning_logs = {
             "input": text,
             "reasoning": reasoning,
             "diagnosis": f"{str(prediction)}. {label2desc[int(prediction)]}"
         }
-        '''
-        
-        self.inputs.append(text)
-        self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
         
         return prediction
     
     def update(self, correctness: bool) -> bool:
         # TODO
+        '''
         if correctness:
             question = self.inputs[-1]
             answer = self.self_outputs[-1]
             chunk = self.get_shot_template().format(question=question, answer=answer)
             self.rag.insert(key=question, value=chunk)
+        '''
         
+        if correctness and self.reasoning_logs:
+            question = self.reasoning_logs["input"]
+            reasoning = self.reasoning_logs["reasoning"]
+            diagnosis = self.reasoning_logs["diagnosis"]
+            chunk = f"{question}\nDiagnosis: {diagnosis}"
+            self.rag.insert(key=question, value=chunk)
+        
+            '''
+            if self.rag.insert_acc % 50 == 0:
+                self.rag.update_memory(top_k=500)
+            '''
+            
             return True
         return False
 
@@ -384,6 +380,7 @@ if __name__ == "__main__":
         'device': args.device,
         'use_8bit': args.use_8bit,
         'rag': {
+            #'embedding_model': 'BAAI/bge-base-en-v1.5',
             'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             'seed': 42,
             'top_k': 16,
