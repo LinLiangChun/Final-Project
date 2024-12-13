@@ -1,17 +1,87 @@
 import re
+import faiss
 import random
+import numpy as np
 from base import Agent
 from colorama import Fore, Style
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, AutoModel
 import warnings
 from transformers import logging as transformers_logging
 
-from utils import RAG, AdaptiveRAG, strip_all_lines
+from utils import RAG, strip_all_lines
 
 # Ignore warning messages from transformers
 warnings.filterwarnings("ignore")
 transformers_logging.set_verbosity_error()
+
+class AdaptiveRAG:
+    def __init__(self, rag_config: dict):
+        self.tokenizer = AutoTokenizer.from_pretrained(rag_config["embedding_model"])
+        self.embed_model = AutoModel.from_pretrained(rag_config["embedding_model"]).eval()
+        self.index = faiss.IndexFlatL2(rag_config.get("embed_dim", 768))
+        self.id2evidence = {}
+        self.insert_acc = 0
+        self.top_k = rag_config["top_k"]
+        
+        self.default_weight = 1.0
+        
+        self.retrieve_count = {}
+        self.insert_order = {}
+
+    def encode_data(self, text: str) -> np.ndarray:
+        tokens = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        with torch.no_grad():
+            embeddings = self.embed_model(**tokens).last_hidden_state[:, 0, :]
+        return embeddings.squeeze().numpy()
+
+    def insert(self, key: str, value: str):
+        embedding = self.encode_data(key).astype("float32")
+        self.index.add(embedding[np.newaxis, :])
+        self.id2evidence[str(self.insert_acc)] = value
+        self.retrieve_count[str(self.insert_acc)] = 0
+        self.insert_order[str(self.insert_acc)] = self.insert_acc
+        self.insert_acc += 1
+
+    def retrieve(self, query: str) -> list[tuple[str, float]]:
+        embedding = self.encode_data(query).astype("float32")
+        distances, indices = self.index.search(embedding[np.newaxis, :], self.top_k)
+        
+        results = []
+        for idx, dist in zip(indices[0], distances[0]):
+            if idx == -1:
+                continue
+            evidence = self.id2evidence.get(str(idx), None)
+            if evidence:
+                results.append((evidence, 1.0 / (dist + 1e-5)))
+                self.retrieve_count[str(idx)] = self.retrieve_count.get(str(idx), 0) + 1
+        
+        return results
+
+    def adjust_weights(self, retrieval_scores):
+        max_score = max(retrieval_scores) if retrieval_scores else 1.0
+        weights = [score / max_score for score in retrieval_scores]
+        
+        return weights
+
+    def update_memory(self, top_k: int) -> None:
+        sorted_examples = sorted(
+            self.id2evidence.keys(),
+            key=lambda x: (self.retrieve_count.get(x, 0), self.insert_order.get(x, 0)),
+            reverse=True
+        )
+        keep_indices = set(sorted_examples[:top_k])
+        
+        self.id2evidence = {k: v for k, v in self.id2evidence.items() if k in keep_indices}
+        self.retrieve_count = {k: v for k, v in self.retrieve_count.items() if k in keep_indices}
+        self.insert_order = {k: v for k, v in self.insert_order.items() if k in keep_indices}
+        
+        self.index.reset()
+        for idx, evidence in self.id2evidence.items():
+            embedding = self.encode_data(evidence).astype("float32")
+            self.index.add(embedding[np.newaxis, :])
+            
+        print('Memory update!')
 
 class ClassificationAgent(Agent):
     """
