@@ -131,7 +131,9 @@ class ClassificationAgent(Agent):
             )
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
         
-        #self.rag = RAG(config["rag"])
+        '''
+        self.rag = RAG(config["rag"])
+        '''
         self.rag = AdaptiveRAG(config["rag"])
         
         # Save the streaming inputs and outputs for iterative improvement
@@ -282,8 +284,7 @@ if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser.add_argument('--bench_name', type=str, required=True)
-    #parser.add_argument('--model_name', type=str, default="Qwen/Qwen2.5-7B-Instruct")
-    parser.add_argument('--model_name', type=str, default="mistralai/Mistral-7B-Instruct-v0.3")
+    parser.add_argument('--model_name', type=str, default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--use_8bit', action='store_true')
@@ -314,8 +315,8 @@ if __name__ == "__main__":
         'device': args.device,
         'use_8bit': args.use_8bit,
         'rag': {
-            'embedding_model': 'BAAI/bge-base-en-v1.5',
-            #'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
+            #'embedding_model': 'BAAI/bge-base-en-v1.5',
+            'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             #'embedding_model': 'medicalai/ClinicalBERT',
             #'embedding_model': 'emilyalsentzer/Bio_ClinicalBERT',
             #'embedding_model': 'NeuML/pubmedbert-base-embeddings',
