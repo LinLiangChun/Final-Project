@@ -97,7 +97,7 @@ class ClassificationAgent(Agent):
         
         system_prompt = """\
         Act as a professional medical doctor that can diagnose the patient based on the patient profile and provide the reasoning process concisely.
-        Provide your diagnosis and reasoning concisely in the following format (within 100 words):
+        Provide your diagnosis and reasoning concisely in the following format (within 200 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>""".strip()
         
@@ -123,7 +123,7 @@ class ClassificationAgent(Agent):
         All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
         {option_text}
 
-        Provide your diagnosis and reasoning concisely in the following format (within 100 words):
+        Provide your diagnosis and reasoning concisely in the following format (within 200 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>""".strip()
         
@@ -178,7 +178,7 @@ class ClassificationAgent(Agent):
         
         {text} 
 
-        Provide your diagnosis and reasoning concisely in the following format (within 100 words):
+        Provide your diagnosis and reasoning concisely in the following format (within 200 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>"""
         
@@ -458,7 +458,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.bench_name.startswith("classification"):
-        max_tokens = 128
+        max_tokens = 256
         agent_name = ClassificationAgent
     elif args.bench_name.startswith("sql_generation"):
         max_tokens = 512
@@ -481,8 +481,7 @@ if __name__ == "__main__":
         'use_8bit': args.use_8bit,
         'rag': {
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
-            'embedding_model': 'BAAI/bge-large-en-v1.5',
-            #'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
+            'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             #'embedding_model': 'medicalai/ClinicalBERT',
             #'embedding_model': 'emilyalsentzer/Bio_ClinicalBERT',
             #'embedding_model': 'NeuML/pubmedbert-base-embeddings',
