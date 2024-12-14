@@ -97,7 +97,7 @@ class ClassificationAgent(Agent):
         
         system_prompt = """\
         Act as a professional medical doctor that can diagnose the patient based on the patient profile and provide the reasoning process concisely.
-        Provide your diagnosis and reasoning concisely in the following format (within 200 words):
+        Provide your diagnosis and reasoning concisely in the following format (within 100 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>""".strip()
         
@@ -123,7 +123,7 @@ class ClassificationAgent(Agent):
         All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
         {option_text}
 
-        Provide your diagnosis and reasoning concisely in the following format (within 200 words):
+        Provide your diagnosis and reasoning concisely in the following format (within 100 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>""".strip()
         
@@ -178,7 +178,7 @@ class ClassificationAgent(Agent):
         
         {text} 
 
-        Provide your diagnosis and reasoning concisely in the following format (within 200 words):
+        Provide your diagnosis and reasoning concisely in the following format (within 100 words):
         Diagnosis: <number>. <diagnosis>
         Reasoning: <concise reasoning>"""
         
@@ -219,7 +219,6 @@ class ClassificationAgent(Agent):
         }
 
     @staticmethod
-    #def extract_label(pred_text: str, label2desc: dict[str, str]) -> str:
     def extract_label(response: dict, label2desc: dict[str, str]) -> tuple:
         pred_text = response.get("diagnosis", "")
         reasoning = response.get("reasoning", "")
@@ -240,10 +239,6 @@ class ClassificationAgent(Agent):
             else:
                 print(Fore.RED + f"Prediction {pred_text} has no extracted numbers. Randomly select one." + Style.RESET_ALL)
                 prediction = random.choice(list(label2desc.keys()))
-        
-        '''
-        return str(prediction)
-        '''
         
         return str(prediction), reasoning
 
@@ -272,10 +267,6 @@ class ClassificationAgent(Agent):
                 device_map=config["device"]
             )
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
-        
-        '''
-        self.rag = RAG(config["rag"])
-        '''
         
         self.rag = AdaptiveRAG(config["rag"])
         
@@ -355,6 +346,9 @@ class ClassificationAgent(Agent):
             "input_pred": prompt,
             "output_pred": response,
         })
+        
+        self.inputs.append(text)
+        self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
         '''
         
         self.reasoning_logs = {
@@ -362,11 +356,6 @@ class ClassificationAgent(Agent):
             "reasoning": reasoning,
             "diagnosis": f"{str(prediction)}. {label2desc[int(prediction)]}"
         }
-        
-        '''
-        self.inputs.append(text)
-        self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
-        '''
         
         return prediction
     
@@ -394,14 +383,19 @@ class ClassificationAgent(Agent):
             question = self.reasoning_logs["input"]
             reasoning = self.reasoning_logs["reasoning"]
             diagnosis = self.reasoning_logs["diagnosis"]
-            #chunk = f"{question}\nReasoning: {reasoning}\nDiagnosis: {diagnosis}"
-            chunk = f"{question}\nDiagnosis: {diagnosis}"
-            self.rag.insert(key=question, value=chunk)
-        
-            '''
-            if self.rag.insert_acc % 50 == 0:
-                self.rag.update_memory(top_k=500)
-            '''
+            
+            mid_point = len(question) // 2
+            question1 = question[:mid_point].strip()
+            question2 = question[mid_point:].strip()
+            
+            chunk1 = f"{question1}\nDiagnosis: {diagnosis}"
+            self.rag.insert(key=question1, value=chunk1)
+            
+            chunk2 = f"{question2}\nDiagnosis: {diagnosis}"
+            self.rag.insert(key=question2, value=chunk2)
+            
+            #chunk = f"{question}\nDiagnosis: {diagnosis}"
+            #self.rag.insert(key=question, value=chunk)
             
             return True
         return False
@@ -449,7 +443,6 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument('--bench_name', type=str, required=True)
     parser.add_argument('--model_name', type=str, default="Qwen/Qwen2.5-7B-Instruct")
-    #parser.add_argument('--model_name', type=str, default="mistralai/Mistral-7B-Instruct-v0.3")
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--use_8bit', action='store_true')
@@ -458,7 +451,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.bench_name.startswith("classification"):
-        max_tokens = 256
+        max_tokens = 128
         agent_name = ClassificationAgent
     elif args.bench_name.startswith("sql_generation"):
         max_tokens = 512
@@ -482,11 +475,6 @@ if __name__ == "__main__":
         'rag': {
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
             'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
-            #'embedding_model': 'medicalai/ClinicalBERT',
-            #'embedding_model': 'emilyalsentzer/Bio_ClinicalBERT',
-            #'embedding_model': 'NeuML/pubmedbert-base-embeddings',
-            #'embedding_model': 'pritamdeka/S-PubMedBert-MS-MARCO',
-            #'embedding_model': 'abhinand/MedEmbed-large-v0.1',
             'seed': 42,
             'top_k': 16,
             'order': 'similar_at_top',
