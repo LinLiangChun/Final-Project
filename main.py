@@ -268,7 +268,7 @@ class ClassificationAgent(Agent):
             )
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
         
-        self.rag = RAG(config["rag"])
+        self.rag = AdaptiveRAG(config["rag"])
         
         # Save the streaming inputs and outputs for iterative improvement
         self.inputs = list()
@@ -305,8 +305,16 @@ class ClassificationAgent(Agent):
         prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
         prompt_fewshot = self.get_fewshot_template(option_text, text)
         
+        '''
         shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
+        '''
         
+        retrieval_results = self.rag.retrieve(query=text)
+        docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
+
+        weights = self.rag.adjust_weights(scores)
+        shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
+
         if self.rag.insert_acc >= 50:
             if len(shots) > 0:
                 fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
@@ -362,12 +370,19 @@ class ClassificationAgent(Agent):
             bool: Whether the prediction is correct.
         """
         
-        # TODO        
+        # TODO
+        '''
+        if correctness:
+            question = self.inputs[-1]
+            answer = self.self_outputs[-1]
+            chunk = self.get_shot_template().format(question=question, answer=answer)
+            self.rag.insert(key=question, value=chunk)
+        '''
+        
         if correctness and self.reasoning_logs:
             question = self.reasoning_logs["input"]
             reasoning = self.reasoning_logs["reasoning"]
             diagnosis = self.reasoning_logs["diagnosis"]
-            
             chunk = f"{question}\nDiagnosis: {diagnosis}"
             self.rag.insert(key=question, value=chunk)
             
@@ -448,12 +463,11 @@ if __name__ == "__main__":
         'use_8bit': args.use_8bit,
         'rag': {
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
-            'embedding_model': 'BAAI/bge-large-en-v1.5',
-            #'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
+            'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             'seed': 42,
             'top_k': 16,
             'order': 'similar_at_top',
-            #'embed_dim': 768,
+            'embed_dim': 768,
         }
     }
     agent = agent_name(llm_config)
