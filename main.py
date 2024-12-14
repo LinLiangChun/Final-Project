@@ -238,20 +238,20 @@ class ClassificationAgent(Agent):
         weights = self.rag.adjust_weights(scores)
         shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
 
-        #if self.rag.insert_acc >= 50:
-        if len(shots) > 0:
-            fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
-            try:
-                prompt = re.sub(pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot)
-            except Exception as e:
-                error_msg = f"Error ```{e}``` caused by these shots. Using the zero-shot prompt."
-                print(Fore.RED + error_msg + Fore.RESET)
+        if self.rag.insert_acc >= 20:
+            if len(shots) > 0:
+                fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
+                try:
+                    prompt = re.sub(pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot)
+                except Exception as e:
+                    error_msg = f"Error ```{e}``` caused by these shots. Using the zero-shot prompt."
+                    print(Fore.RED + error_msg + Fore.RESET)
+                    prompt = prompt_zeroshot
+            else:
+                print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
                 prompt = prompt_zeroshot
         else:
-            print(Fore.YELLOW + "No RAG shots found. Using zeroshot prompt." + Fore.RESET)
             prompt = prompt_zeroshot
-        #else:
-        #    prompt = prompt_zeroshot
 
         messages = [
             {"role": "system", "content": system_prompt},
