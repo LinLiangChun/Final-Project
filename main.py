@@ -84,8 +84,17 @@ class AdaptiveRAG:
         print('Memory update!')
 
 class ClassificationAgent(Agent):
+    """
+    An agent that classifies text into one of the labels in the given label set.
+    """
     @staticmethod
     def get_system_prompt() -> str:
+        '''
+        system_prompt = """\
+        Act as a professional medical doctor that can diagnose the patient based on the patient profile.
+        Provide your diagnosis in the following format: <number>. <diagnosis>""".strip()
+        '''
+        
         system_prompt = """\
         Act as a professional medical doctor that can diagnose the patient based on the patient profile and provide the reasoning process concisely.
         Provide your diagnosis and reasoning concisely in the following format (within 100 words):
@@ -95,7 +104,18 @@ class ClassificationAgent(Agent):
         return strip_all_lines(system_prompt)
 
     @staticmethod
-    def get_zeroshot_prompt(option_text: str, text: str) -> str:        
+    def get_zeroshot_prompt(option_text: str, text: str) -> str:
+        '''
+        prompt = f"""\
+        Act as a medical doctor and diagnose the patient based on the following patient profile:
+        {text}
+
+        All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
+        {option_text}
+
+        Now, directly provide the diagnosis for the patient in the following format: <number>. <diagnosis>""".strip()
+        '''
+        
         prompt = f"""\ 
         Act as a medical doctor and diagnose the patient based on the following patient profile:
         {text}
@@ -111,14 +131,39 @@ class ClassificationAgent(Agent):
 
     @staticmethod
     def get_shot_template() -> str:
+        '''
         prompt = f"""\
         {{question}}
         Diagnosis: {{answer}}"""
+        '''
+        
+        prompt = f"""\ 
+        Patient Profile: {{question}}
+        Diagnosis: {{answer}}
+        Reasoning: {{reasoning}}"""
         
         return strip_all_lines(prompt)
 
     @staticmethod
-    def get_fewshot_template(option_text: str, text: str,) -> str:        
+    def get_fewshot_template(option_text: str, text: str,) -> str:
+        '''
+        prompt = f"""\
+        Act as a medical doctor and diagnose the patient based on the provided patient profile.
+        
+        All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
+        {option_text}
+
+        Here are some example cases.
+        
+        {{fewshot_text}}
+        
+        Now it's your turn.
+        
+        {text}        
+        
+        Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>"""
+        '''
+        
         prompt = f"""\ 
         Act as a medical doctor and diagnose the patient based on the provided patient profile.
         
@@ -140,6 +185,10 @@ class ClassificationAgent(Agent):
         return strip_all_lines(prompt)
 
     def generate_response(self, messages: list) -> str:
+        """
+        Generate a response using the local model.
+        """
+        
         text_chat = self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,
@@ -155,7 +204,11 @@ class ClassificationAgent(Agent):
         generated_ids = [
             output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
         ]
-                
+        
+        '''
+        return self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        '''
+        
         generated_text = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
         diagnosis = re.search(r"Diagnosis:\s*(\d+\..*?)(?=\s*Reasoning:|$)", generated_text, re.S)
         reasoning = re.search(r"Reasoning:\s*(.*)", generated_text, re.S)
@@ -166,6 +219,7 @@ class ClassificationAgent(Agent):
         }
 
     @staticmethod
+    #def extract_label(pred_text: str, label2desc: dict[str, str]) -> str:
     def extract_label(response: dict, label2desc: dict[str, str]) -> tuple:
         pred_text = response.get("diagnosis", "")
         reasoning = response.get("reasoning", "")
@@ -187,9 +241,17 @@ class ClassificationAgent(Agent):
                 print(Fore.RED + f"Prediction {pred_text} has no extracted numbers. Randomly select one." + Style.RESET_ALL)
                 prediction = random.choice(list(label2desc.keys()))
         
+        '''
+        return str(prediction)
+        '''
+        
         return str(prediction), reasoning
 
     def __init__(self, config: dict) -> None:
+        """
+        Initialize your LLM here
+        """
+        
         # TODO
         super().__init__(config)
         self.llm_config = config
@@ -211,6 +273,10 @@ class ClassificationAgent(Agent):
             )
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
         
+        '''
+        self.rag = RAG(config["rag"])
+        '''
+        
         self.rag = AdaptiveRAG(config["rag"])
         
         # Save the streaming inputs and outputs for iterative improvement
@@ -221,6 +287,26 @@ class ClassificationAgent(Agent):
         self.model.eval()
 
     def __call__(self, label2desc: dict[str, str], text: str) -> str:
+        """
+        Classify the text into one of the labels.
+
+        Args:
+            label2desc (dict[str, str]): A dictionary mapping each label to its description.
+            text (str): The text to classify.
+
+        Returns:
+            str: The label (should be a key in label2desc) that the text is classified into.
+
+        For example:
+        label2desc = {
+            "apple": "A fruit that is typically red, green, or yellow.",
+            "banana": "A long curved fruit that grows in clusters and has soft pulpy flesh and yellow skin when ripe.",
+            "cherry": "A small, round stone fruit that is typically bright or dark red.",
+        }
+        text = "The fruit is red and about the size of a tennis ball."
+        label = "apple" (should be a key in label2desc, i.e., ["apple", "banana", "cherry"])
+        """
+        
         # TODO
         self.reset_log_info()
         option_text = '\n'.join([f"{str(k)}. {v}" for k, v in label2desc.items()])
@@ -238,7 +324,7 @@ class ClassificationAgent(Agent):
         weights = self.rag.adjust_weights(scores)
         shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
 
-        if self.rag.insert_acc >= 25:
+        if self.rag.insert_acc >= 50:
             if len(shots) > 0:
                 fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
                 try:
@@ -269,9 +355,6 @@ class ClassificationAgent(Agent):
             "input_pred": prompt,
             "output_pred": response,
         })
-        
-        self.inputs.append(text)
-        self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
         '''
         
         self.reasoning_logs = {
@@ -280,9 +363,24 @@ class ClassificationAgent(Agent):
             "diagnosis": f"{str(prediction)}. {label2desc[int(prediction)]}"
         }
         
+        '''
+        self.inputs.append(text)
+        self.self_outputs.append(f"{str(prediction)}. {label2desc[int(prediction)]}")
+        '''
+        
         return prediction
     
     def update(self, correctness: bool) -> bool:
+        """
+        Update your LLM agent based on the correctness of its own prediction at the current time step.
+
+        Args:
+            correctness (bool): Whether the prediction is correct.
+
+        Returns:
+            bool: Whether the prediction is correct.
+        """
+        
         # TODO
         '''
         if correctness:
@@ -296,6 +394,7 @@ class ClassificationAgent(Agent):
             question = self.reasoning_logs["input"]
             reasoning = self.reasoning_logs["reasoning"]
             diagnosis = self.reasoning_logs["diagnosis"]
+            #chunk = f"{question}\nReasoning: {reasoning}\nDiagnosis: {diagnosis}"
             chunk = f"{question}\nDiagnosis: {diagnosis}"
             self.rag.insert(key=question, value=chunk)
         
@@ -350,6 +449,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument('--bench_name', type=str, required=True)
     parser.add_argument('--model_name', type=str, default="Qwen/Qwen2.5-7B-Instruct")
+    #parser.add_argument('--model_name', type=str, default="mistralai/Mistral-7B-Instruct-v0.3")
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--use_8bit', action='store_true')
@@ -381,7 +481,13 @@ if __name__ == "__main__":
         'use_8bit': args.use_8bit,
         'rag': {
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
-            'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
+            'embedding_model': 'BAAI/bge-large-en-v1.5',
+            #'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
+            #'embedding_model': 'medicalai/ClinicalBERT',
+            #'embedding_model': 'emilyalsentzer/Bio_ClinicalBERT',
+            #'embedding_model': 'NeuML/pubmedbert-base-embeddings',
+            #'embedding_model': 'pritamdeka/S-PubMedBert-MS-MARCO',
+            #'embedding_model': 'abhinand/MedEmbed-large-v0.1',
             'seed': 42,
             'top_k': 16,
             'order': 'similar_at_top',
