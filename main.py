@@ -268,7 +268,7 @@ class ClassificationAgent(Agent):
             )
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
         
-        self.rag = AdaptiveRAG(config["rag"])
+        self.rag = RAG(config["rag"])
         
         # Save the streaming inputs and outputs for iterative improvement
         self.inputs = list()
@@ -305,16 +305,8 @@ class ClassificationAgent(Agent):
         prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
         prompt_fewshot = self.get_fewshot_template(option_text, text)
         
-        '''
         shots = self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
-        '''
         
-        retrieval_results = self.rag.retrieve(query=text)
-        docs, scores = zip(*retrieval_results) if retrieval_results else ([], [])
-
-        weights = self.rag.adjust_weights(scores)
-        shots = [f"[Weight: {weight:.2f}] {doc}" for doc, weight in zip(docs, weights)]
-
         if self.rag.insert_acc >= 50:
             if len(shots) > 0:
                 fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
@@ -433,7 +425,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.bench_name.startswith("classification"):
-        max_tokens = 256
+        max_tokens = 128
         agent_name = ClassificationAgent
     elif args.bench_name.startswith("sql_generation"):
         max_tokens = 512
@@ -456,11 +448,12 @@ if __name__ == "__main__":
         'use_8bit': args.use_8bit,
         'rag': {
             #'embedding_model': 'BAAI/bge-base-en-v1.5',
-            'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
+            'embedding_model': 'BAAI/bge-large-en-v1.5',
+            #'embedding_model': 'sentence-transformers/all-mpnet-base-v2',
             'seed': 42,
             'top_k': 16,
             'order': 'similar_at_top',
-            'embed_dim': 768,
+            #'embed_dim': 768,
         }
     }
     agent = agent_name(llm_config)
