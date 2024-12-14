@@ -370,32 +370,14 @@ class ClassificationAgent(Agent):
             bool: Whether the prediction is correct.
         """
         
-        # TODO
-        '''
-        if correctness:
-            question = self.inputs[-1]
-            answer = self.self_outputs[-1]
-            chunk = self.get_shot_template().format(question=question, answer=answer)
-            self.rag.insert(key=question, value=chunk)
-        '''
-        
+        # TODO        
         if correctness and self.reasoning_logs:
             question = self.reasoning_logs["input"]
             reasoning = self.reasoning_logs["reasoning"]
             diagnosis = self.reasoning_logs["diagnosis"]
             
-            mid_point = len(question) // 2
-            question1 = question[:mid_point].strip()
-            question2 = question[mid_point:].strip()
-            
-            chunk1 = f"{question1}\nDiagnosis: {diagnosis}"
-            self.rag.insert(key=question1, value=chunk1)
-            
-            chunk2 = f"{question2}\nDiagnosis: {diagnosis}"
-            self.rag.insert(key=question2, value=chunk2)
-            
-            #chunk = f"{question}\nDiagnosis: {diagnosis}"
-            #self.rag.insert(key=question, value=chunk)
+            chunk = f"{question}\nDiagnosis: {diagnosis}"
+            self.rag.insert(key=question, value=chunk)
             
             return True
         return False
@@ -451,7 +433,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.bench_name.startswith("classification"):
-        max_tokens = 128
+        max_tokens = 256
         agent_name = ClassificationAgent
     elif args.bench_name.startswith("sql_generation"):
         max_tokens = 512
