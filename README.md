@@ -20,8 +20,8 @@
   python setup_data.py
   ```
 
-### Implement
-- Implement with two tasks.
+### Execution
+- Execute two tasks.
   ```bash
   # Medical Diagnosis
   python main.py --bench_name "classification_public" --output_path <path_to_save_csv>
