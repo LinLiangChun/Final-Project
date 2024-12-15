@@ -1,4 +1,4 @@
-# ADL 2024 Final Project
+# ADL 2024 Final Project - Group 19
 
 ### Environment and Packages
 - Create a virtual environment (recommended).
