@@ -1,4 +1,4 @@
-# ADL Final Project - Group 19
+# ADL 2024 Final Project - Group 19
 
 ### Environment and Packages
 - Create a virtual environment (recommended).
@@ -23,6 +23,9 @@
 ### Implement
 - Implement with two tasks.
   ```bash
+  # Medical Diagnosis
   python main.py --bench_name "classification_public" --output_path <path_to_save_csv>
+
+  # Text-to-SQL Generation
   python main.py --bench_name "sql_generation_public" --output_path <path_to_save_csv>
   ```
